@@ -24,23 +24,61 @@ import android.view.View;
 
 import java.util.Arrays;
 
+import javax.microedition.lcdui.event.SimpleEvent;
+
 import androidx.appcompat.app.AlertDialog;
 
 public class Alert extends Screen implements DialogInterface.OnClickListener {
 	public static final int FOREVER = -2;
 	public static final Command DISMISS_COMMAND = new Command("", Command.OK, 0);
+	private static final AlertCommandListener DEFAULT_LISTENER = new AlertCommandListener();
+
+	private static class AlertCommandListener implements CommandListener {
+		@Override
+		public void commandAction(Command c, Displayable d) {
+			((Alert) d).dismiss();
+		}
+	}
 
 	private String text;
 	private Image image;
 	private AlertType type;
 	private int timeout;
 	private Gauge indicator;
+	private AlertDialog alertDialog;
 
 	private Form form;
 	private Displayable nextDisplayable;
 
 	private Command[] commands;
 	private int positive, negative, neutral;
+
+	private final SimpleEvent msgSetString = new SimpleEvent() {
+		@Override
+		public void process() {
+			alertDialog.setMessage(text);
+		}
+	};
+
+	private final SimpleEvent msgSetImage = new SimpleEvent() {
+		@Override
+		public void process() {
+			BitmapDrawable bitmapDrawable = new BitmapDrawable(image.getBitmap());
+			alertDialog.setIcon(bitmapDrawable);
+		}
+	};
+
+	private final SimpleEvent msgCommandsChanged = new SimpleEvent() {
+		@Override
+		public void process() {
+			if (listener == DEFAULT_LISTENER) {
+				alertDialog.setCancelable(true);
+				alertDialog.setCanceledOnTouchOutside(true);
+				return;
+			}
+			alertDialog.setCanceledOnTouchOutside(countCommands() == 1 && getCommands()[0] == DISMISS_COMMAND);
+		}
+	};
 
 	public Alert(String title) {
 		this(title, null, null, null);
@@ -54,14 +92,24 @@ public class Alert extends Screen implements DialogInterface.OnClickListener {
 		this.image = image;
 		this.type = type;
 		this.timeout = FOREVER;
+
+		setCommandListener(DEFAULT_LISTENER);
 	}
 
 	public void setType(AlertType type) {
 		this.type = type;
 	}
 
+	public AlertType getType() {
+		return type;
+	}
+
 	public void setString(String str) {
 		text = str;
+
+		if (alertDialog != null) {
+			ViewHandler.postEvent(msgSetString);
+		}
 	}
 
 	public String getString() {
@@ -70,6 +118,10 @@ public class Alert extends Screen implements DialogInterface.OnClickListener {
 
 	public void setImage(Image img) {
 		image = img;
+
+		if (alertDialog != null) {
+			ViewHandler.postEvent(msgSetImage);
+		}
 	}
 
 	public Image getImage() {
@@ -77,7 +129,23 @@ public class Alert extends Screen implements DialogInterface.OnClickListener {
 	}
 
 	public void setIndicator(Gauge indicator) {
+		if (indicator == null) {
+			if (this.indicator != null) {
+				this.indicator.setAlert(null);
+			}
+		} else {
+			if (indicator.isInteractive()) throw new IllegalArgumentException();
+			indicator.setAlert(this);
+		}
 		this.indicator = indicator;
+	}
+
+	public Gauge getIndicator() {
+		return indicator;
+	}
+
+	public int getDefaultTimeout() {
+		return FOREVER;
 	}
 
 	public void setTimeout(int timeout) {
@@ -92,18 +160,24 @@ public class Alert extends Screen implements DialogInterface.OnClickListener {
 		return timeout > 0 && countCommands() < 2;
 	}
 
-	public AlertDialog.Builder prepareDialog() {
+	public AlertDialog prepareDialog() {
 		Context context = getParentActivity();
 		AlertDialog.Builder builder = new AlertDialog.Builder(context);
 
 		builder.setTitle(getTitle());
 		builder.setMessage(getString());
 		builder.setOnDismissListener(dialog -> {
-			if (nextDisplayable != null) Display.getDisplay(null).setCurrent(nextDisplayable);
+			if (countCommands() == 1 && getCommands()[0] == DISMISS_COMMAND && listener != null) {
+				fireCommandAction(DISMISS_COMMAND, this);
+			}
 		});
 
 		if (image != null) {
 			builder.setIcon(new BitmapDrawable(context.getResources(), image.getBitmap()));
+		}
+
+		if (indicator != null) {
+			builder.setView(indicator.getItemContentView());
 		}
 
 		commands = getCommands();
@@ -124,6 +198,13 @@ public class Alert extends Screen implements DialogInterface.OnClickListener {
 				neutral = i;
 			}
 		}
+		for (int i = 0; i < commands.length; i++) {
+			if (positive < 0 && negative != i && neutral != i) {
+				positive = i;
+			} else if (negative < 0 && positive != i && neutral != i) {
+				negative = i;
+			}
+		}
 
 		if (positive >= 0) {
 			builder.setPositiveButton(commands[positive].getAndroidLabel(), this);
@@ -137,11 +218,14 @@ public class Alert extends Screen implements DialogInterface.OnClickListener {
 			builder.setNeutralButton(commands[neutral].getAndroidLabel(), this);
 		}
 
-		return builder;
-	}
-
-	public void setNextDisplayable(Displayable nextDisplayable) {
-		this.nextDisplayable = nextDisplayable;
+		alertDialog = builder.create();
+		if (listener == DEFAULT_LISTENER) {
+			alertDialog.setCancelable(true);
+			alertDialog.setCanceledOnTouchOutside(true);
+		} else {
+			alertDialog.setCanceledOnTouchOutside(commands.length == 1 && commands[0] == DISMISS_COMMAND);
+		}
+		return alertDialog;
 	}
 
 	@Override
@@ -149,6 +233,9 @@ public class Alert extends Screen implements DialogInterface.OnClickListener {
 		if (cmd != DISMISS_COMMAND) {
 			super.addCommand(cmd);
 			super.removeCommand(DISMISS_COMMAND);
+			if (alertDialog != null) {
+				ViewHandler.postEvent(msgCommandsChanged);
+			}
 		}
 	}
 
@@ -157,8 +244,22 @@ public class Alert extends Screen implements DialogInterface.OnClickListener {
 		if (cmd != DISMISS_COMMAND) {
 			super.removeCommand(cmd);
 			if (countCommands() == 0) {
+				if (alertDialog != null) {
+					ViewHandler.postEvent(msgCommandsChanged);
+				}
 				super.addCommand(DISMISS_COMMAND);
 			}
+		}
+	}
+
+	@Override
+	public void setCommandListener(CommandListener listener) {
+		if (listener == null) {
+			listener = DEFAULT_LISTENER;
+		}
+		super.setCommandListener(listener);
+		if (alertDialog != null) {
+			ViewHandler.postEvent(msgCommandsChanged);
 		}
 	}
 
@@ -197,5 +298,14 @@ public class Alert extends Screen implements DialogInterface.OnClickListener {
 				fireCommandAction(commands[neutral], this);
 				break;
 		}
+	}
+
+	void setNextDisplayable(Displayable nextDisplayable) {
+		this.nextDisplayable = nextDisplayable;
+	}
+
+	private void dismiss() {
+		if (nextDisplayable != null) Display.getDisplay(null).setCurrent(nextDisplayable);
+		alertDialog = null;
 	}
 }

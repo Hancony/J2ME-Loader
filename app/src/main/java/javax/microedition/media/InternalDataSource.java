@@ -20,6 +20,12 @@ package javax.microedition.media;
 import android.util.Log;
 import android.webkit.MimeTypeMap;
 
+import com.arthenica.mobileffmpeg.Config;
+import com.arthenica.mobileffmpeg.FFmpeg;
+import com.arthenica.mobileffmpeg.FFprobe;
+import com.arthenica.mobileffmpeg.MediaInformation;
+import com.arthenica.mobileffmpeg.StreamInformation;
+
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
@@ -37,9 +43,6 @@ public class InternalDataSource extends DataSource {
 
 	public InternalDataSource(InputStream stream, String type) throws IllegalArgumentException, IOException {
 		super(null);
-		if (stream == null) {
-			throw new IllegalArgumentException();
-		}
 
 		String extension = "." + MimeTypeMap.getSingleton().getExtensionFromMimeType(type);
 		this.mediaFile = File.createTempFile("media", extension, ContextHolder.getCacheDir());
@@ -73,6 +76,33 @@ public class InternalDataSource extends DataSource {
 			Log.d(TAG, "Media pipe failure: " + e.toString());
 		} finally {
 			stream.close();
+		}
+
+		try {
+			convert();
+		} catch (Throwable e) {
+			// Thrown on fake Oppo devices
+			e.printStackTrace();
+		}
+	}
+
+	private void convert() {
+		MediaInformation mediaInformation = FFprobe.getMediaInformation(mediaFile.getPath());
+		if (mediaInformation != null) {
+			StreamInformation streamInformation = mediaInformation.getStreams().get(0);
+			if (streamInformation.getCodec().contains("adpcm")) {
+				String newName = mediaFile.getPath() + ".wav";
+				String cmd = "-i " + mediaFile.getPath() + " -acodec pcm_u8 -ar 16000 " + newName;
+				int rc = FFmpeg.execute(cmd);
+				if (rc == Config.RETURN_CODE_SUCCESS) {
+					Log.i(TAG, "Command execution completed successfully.");
+					mediaFile.delete();
+					mediaFile = new File(newName);
+				} else {
+					Log.i(TAG, String.format(
+							"Command execution failed with rc=%d and the output below.", rc));
+				}
+			}
 		}
 	}
 

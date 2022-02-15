@@ -20,6 +20,10 @@ import android.view.View;
 import android.widget.ProgressBar;
 import android.widget.SeekBar;
 
+import androidx.appcompat.widget.AppCompatSeekBar;
+
+import javax.microedition.shell.MicroActivity;
+
 public class Gauge extends Item {
 	public static final int CONTINUOUS_IDLE = 0;
 	public static final int INCREMENTAL_IDLE = 1;
@@ -30,8 +34,9 @@ public class Gauge extends Item {
 
 	private ProgressBar pbar;
 
-	private boolean interactive;
+	private final boolean interactive;
 	private int value, maxValue;
+	private Alert alert;
 
 	private class SeekBarListener implements SeekBar.OnSeekBarChangeListener {
 		@Override
@@ -51,14 +56,14 @@ public class Gauge extends Item {
 		}
 	}
 
-	private SeekBarListener listener = new SeekBarListener();
+	private final SeekBarListener listener = new SeekBarListener();
 
 	public Gauge(String label, boolean interactive, int maxValue, int initialValue) {
 		setLabel(label);
 
 		this.interactive = interactive;
-		this.maxValue = maxValue;
-		this.value = initialValue;
+		setMaxValue(maxValue);
+		setValue(value);
 	}
 
 	public int getValue() {
@@ -67,7 +72,9 @@ public class Gauge extends Item {
 
 	public void setValue(int value) {
 		this.value = value;
-
+		if (this.maxValue == INDEFINITE && !interactive) {
+			return;
+		}
 		if (pbar != null) {
 			pbar.setProgress(value);
 		}
@@ -79,24 +86,45 @@ public class Gauge extends Item {
 
 	public void setMaxValue(int maxValue) {
 		this.maxValue = maxValue;
-
+		if (maxValue == INDEFINITE && !interactive) {
+			if (pbar != null) {
+				pbar.setIndeterminate(true);
+			}
+			return;
+		}
 		if (pbar != null) {
+			pbar.setIndeterminate(false);
 			pbar.setMax(maxValue);
 		}
+	}
+
+	public boolean isInteractive() {
+		return interactive;
 	}
 
 	@Override
 	protected View getItemContentView() {
 		if (pbar == null) {
+			MicroActivity activity;
+			if (alert != null) {
+				activity = alert.getParentActivity();
+			} else {
+				activity = getOwnerForm().getParentActivity();
+			}
 			if (interactive) {
-				pbar = new SeekBar(getOwnerForm().getParentActivity());
+				pbar = new AppCompatSeekBar(activity);
 				((SeekBar) pbar).setOnSeekBarChangeListener(listener);
 			} else {
-				pbar = new ProgressBar(getOwnerForm().getParentActivity(), null, android.R.attr.progressBarStyleHorizontal);
+				pbar = new ProgressBar(activity, null, android.R.attr.progressBarStyleHorizontal);
+				pbar.setIndeterminate(maxValue == INDEFINITE);
 			}
 
 			pbar.setMax(maxValue);
 			pbar.setProgress(value);
+
+			if (alert != null) {
+				pbar.setPadding(60, 0, 60, 0);
+			}
 		}
 
 		return pbar;
@@ -105,5 +133,9 @@ public class Gauge extends Item {
 	@Override
 	protected void clearItemContentView() {
 		pbar = null;
+	}
+
+	void setAlert(Alert alert) {
+		this.alert = alert;
 	}
 }

@@ -16,111 +16,118 @@
 
 package ru.playsoftware.j2meloader.util;
 
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.util.Log;
+
+import androidx.annotation.NonNull;
+
 import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Iterator;
-import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.ListIterator;
 
 import ru.playsoftware.j2meloader.applist.AppItem;
 import ru.playsoftware.j2meloader.appsdb.AppRepository;
 import ru.playsoftware.j2meloader.config.Config;
+import ru.woesss.j2me.jar.Descriptor;
 
 public class AppUtils {
+	private static final String TAG = AppUtils.class.getSimpleName();
 
-	private static ArrayList<AppItem> getAppsList() {
+	private static ArrayList<AppItem> getAppsList(@NonNull List<String> appFolders) {
 		ArrayList<AppItem> apps = new ArrayList<>();
-		String[] appFolders = new File(Config.APP_DIR).list();
-		if (appFolders != null) {
-			for (String appFolder : appFolders) {
-				File temp = new File(Config.APP_DIR, appFolder);
-				try {
-					if (temp.isDirectory() && temp.list().length > 0) {
-						AppItem item = getApp(temp.getName());
-						apps.add(item);
-					} else {
-						temp.delete();
-					}
-				} catch (RuntimeException re) {
-					re.printStackTrace();
-					FileUtils.deleteDirectory(temp);
+		File appsDir = new File(Config.getAppDir());
+		for (String appFolderName : appFolders) {
+			File appFolder = new File(appsDir, appFolderName);
+			if (!appFolder.isDirectory()) {
+				if (!appFolder.delete()) {
+					Log.e(TAG, "getAppsList() failed delete file: " + appFolder);
 				}
+				continue;
+			}
+			File dex = new File(appFolder, Config.MIDLET_DEX_FILE);
+			if (!dex.isFile()) {
+				FileUtils.deleteDirectory(appFolder);
+				continue;
+			}
+			try {
+				AppItem item = getApp(appFolder);
+				apps.add(item);
+			} catch (Exception e) {
+				Log.w(TAG, "getAppsList: ", e);
+				FileUtils.deleteDirectory(appFolder);
 			}
 		}
 		return apps;
 	}
 
-	public static AppItem getApp(String path) {
-		File appDir = new File(Config.APP_DIR, path);
-		LinkedHashMap<String, String> params =
-				FileUtils.loadManifest(new File(appDir.getAbsolutePath(), Config.MIDLET_MANIFEST_FILE));
-		AppItem item = new AppItem(appDir.getName(), params.get("MIDlet-Name"),
-				params.get("MIDlet-Vendor"),
-				params.get("MIDlet-Version"));
-		item.setImagePathExt(getImagePath(appDir, params));
-		return item;
-	}
-
-	private static String getImagePath(File appDir, LinkedHashMap<String, String> params) {
-		File defaultImage = new File(appDir.getAbsolutePath(), Config.MIDLET_ICON_FILE);
-		String imagePath;
-		if (defaultImage.exists()) {
-			imagePath = defaultImage.getName();
+	private static AppItem getApp(File appDir) throws IOException {
+		File mf = new File(appDir, Config.MIDLET_MANIFEST_FILE);
+		Descriptor params = new Descriptor(mf, false);
+		AppItem item = new AppItem(appDir.getName(), params.getName(),
+				params.getVendor(),
+				params.getVersion());
+		File icon = new File(appDir, Config.MIDLET_ICON_FILE);
+		if (icon.exists()) {
+			item.setImagePathExt(Config.MIDLET_ICON_FILE);
 		} else {
-			imagePath = Config.MIDLET_RES_DIR + getImagePathFromManifest(params);
+			String iconPath = Config.MIDLET_RES_DIR + '/' + params.getIcon();
+			icon = new File(appDir, iconPath);
+			if (icon.exists()) {
+				item.setImagePathExt(iconPath);
+			}
 		}
-		return imagePath;
-	}
-
-	public static String getImagePathFromManifest(LinkedHashMap<String, String> params) {
-		String tmp;
-		String imagePath = "";
-		if ((tmp = params.get("MIDlet-Icon")) != null) {
-			imagePath = tmp;
-		} else if ((tmp = params.get("MIDlet-1").split(",")[1]) != null) {
-			imagePath = tmp;
-		}
-		return imagePath.replace(" ", "");
+		return item;
 	}
 
 	public static void deleteApp(AppItem item) {
 		File appDir = new File(item.getPathExt());
 		FileUtils.deleteDirectory(appDir);
-		File appSaveDir = new File(Config.DATA_DIR, item.getTitle());
+		File appSaveDir = new File(Config.getDataDir(), item.getPath());
 		FileUtils.deleteDirectory(appSaveDir);
-		File appConfigsDir = new File(Config.CONFIGS_DIR, item.getTitle());
+		File appConfigsDir = new File(Config.getConfigsDir(), item.getPath());
 		FileUtils.deleteDirectory(appConfigsDir);
 	}
 
 	public static void updateDb(AppRepository appRepository, List<AppItem> items) {
-		String[] appFolders = new File(Config.APP_DIR).list();
-		int itemsNum = items.size();
+		File tmp = new File(Config.getAppDir(), ".tmp");
+		if (tmp.exists()) {
+			// TODO: 30.07.2021 incomplete installation - maybe can continue?
+			FileUtils.deleteDirectory(tmp);
+		}
+		String[] appFolders = new File(Config.getAppDir()).list();
 		if (appFolders == null || appFolders.length == 0) {
 			// If db isn't empty
-			if (itemsNum != 0) {
+			if (items.size() != 0) {
 				appRepository.deleteAll();
 			}
-			appRepository.insertAll(getAppsList());
 			return;
 		}
-		List<String> appFoldersList = Arrays.asList(appFolders);
-		boolean result = true;
+		List<String> appFoldersList = new ArrayList<>(Arrays.asList(appFolders));
 		// Delete invalid app items from db
-		Iterator<AppItem> iterator = items.iterator();
-		while (iterator.hasNext()) {
-			AppItem item = iterator.next();
-			if (!appFoldersList.contains(item.getPath())) {
-				result = false;
-				appRepository.delete(item);
+		ListIterator<AppItem> iterator = items.listIterator(items.size());
+		while (iterator.hasPrevious()) {
+			AppItem item = iterator.previous();
+			if (appFoldersList.remove(item.getPath())) {
 				iterator.remove();
 			}
 		}
-		if (appFolders.length != items.size()) {
-			result = false;
+		if (items.size() > 0) {
+			appRepository.delete(items);
 		}
-		if (!result) {
-			appRepository.insertAll(getAppsList());
+		if (appFoldersList.size() > 0) {
+			appRepository.insert(getAppsList(appFoldersList));
 		}
+	}
+
+	public static Bitmap getIconBitmap(AppItem appItem) {
+		String file = appItem.getImagePathExt();
+		if (file == null) {
+			return null;
+		}
+		return BitmapFactory.decodeFile(file);
 	}
 }

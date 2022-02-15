@@ -19,19 +19,22 @@ package javax.microedition.lcdui;
 
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
+import android.graphics.Color;
 import android.graphics.DashPathEffect;
 import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.Path;
-import android.graphics.PorterDuff;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.Region;
 import android.os.Build;
+import android.util.Log;
 
-import javax.microedition.lcdui.game.Sprite;
+import com.mascotcapsule.micro3d.v3.Graphics3D;
 
-public class Graphics {
+import static javax.microedition.lcdui.game.Sprite.*;
+
+public class Graphics implements com.vodafone.v10.graphics.j3d.Graphics3D, com.motorola.graphics.j3d.Graphics3D {
 	public static final int HCENTER = 1;
 	public static final int VCENTER = 2;
 	public static final int LEFT = 4;
@@ -43,75 +46,55 @@ public class Graphics {
 	public static final int SOLID = 0;
 	public static final int DOTTED = 1;
 
-	private Canvas canvas;
-	private Bitmap canvasBitmap;
+	private final Canvas canvas;
+	private final Bitmap canvasBitmap;
+	private final Image image;
+	private int canvasInitSave;
 
-	private Paint drawPaint = new Paint();
-	private Paint fillPaint = new Paint();
-	private Paint imagePaint = new Paint();
+	private final Paint drawPaint = new Paint();
+	private final Paint fillPaint = new Paint();
 
 	private int translateX;
 	private int translateY;
 
-	private Rect intRect = new Rect();
-	private RectF floatRect = new RectF();
-	private Path path = new Path();
+	private final Rect clip = new Rect();
+	private final Rect rect = new Rect();
+	private final RectF rectF = new RectF();
+	private final Path path = new Path();
 
-	private DashPathEffect dpeffect = new DashPathEffect(new float[]{5, 5}, 0);
-	private int stroke;
-
-	private boolean drawAntiAlias;
-	private boolean textAntiAlias;
+	private final DashPathEffect dashPathEffect = new DashPathEffect(new float[]{5, 5}, 0);
+	private int stroke = SOLID;
 
 	private Font font = Font.getDefaultFont();
+	private com.mascotcapsule.micro3d.v3.Graphics3D g3d;
 
-	public Graphics() {
+	Graphics(Image image) {
+		canvasBitmap = image.getBitmap();
+		this.image = image;
+		canvas = new Canvas(canvasBitmap);
+		canvasInitSave = canvas.save();
+		canvas.clipRect(image.getBounds());
+		canvas.getClipBounds(clip);
 		drawPaint.setStyle(Paint.Style.STROKE);
 		fillPaint.setStyle(Paint.Style.FILL);
-		setStrokeStyle(SOLID);
-		setAntiAlias(false);
-		setAntiAliasText(true);
+		drawPaint.setAntiAlias(false);
+		fillPaint.setAntiAlias(false);
 	}
 
 	public void reset() {
 		setColor(0);
 		setFont(Font.getDefaultFont());
 		setStrokeStyle(SOLID);
-		resetClip();
-		resetTranslation();
-	}
-
-	private void resetTranslation() {
+		canvas.restoreToCount(canvasInitSave);
+		canvasInitSave = canvas.save();
+		canvas.clipRect(image.getBounds());
+		canvas.getClipBounds(clip);
 		translateX = 0;
 		translateY = 0;
 	}
 
-	private void resetClip() {
-		setClip(0, 0, canvas.getWidth(), canvas.getHeight());
-	}
-
-	public void setCanvas(Canvas canvas, Bitmap canvasBitmap) {
-		if (canvas.getSaveCount() > 1) {
-			canvas.restoreToCount(1);
-		}
-		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-			canvas.save();
-		}
-		canvas.save();
-		this.canvas = canvas;
-		this.canvasBitmap = canvasBitmap;
-	}
-
-	public void setSurfaceCanvas(Canvas canvas) {
-		this.canvas = canvas;
-	}
-
 	public Canvas getCanvas() {
 		return canvas;
-	}
-
-	public boolean hasCanvas() {
-		return canvas != null;
 	}
 
 	public void fillPolygon(int[] xPoints, int xOffset, int[] yPoints, int yOffset, int nPoints) {
@@ -157,7 +140,11 @@ public class Graphics {
 	}
 
 	public int getGrayScale() {
-		return (getRedComponent() + getGreenComponent() + getBlueComponent()) / 3;
+		int argb = drawPaint.getColor();
+		int r = argb >> 16 & 0xFF;
+		int g = argb >> 8 & 0xFF;
+		int b = argb & 0xFF;
+		return 0x4CB2 * r + 0x9691 * g + 0x1D3E * b >> 16;
 	}
 
 	public int getRedComponent() {
@@ -184,7 +171,7 @@ public class Graphics {
 		this.stroke = stroke;
 
 		if (stroke == DOTTED) {
-			drawPaint.setPathEffect(dpeffect);
+			drawPaint.setPathEffect(dashPathEffect);
 		} else {
 			drawPaint.setPathEffect(null);
 		}
@@ -194,23 +181,8 @@ public class Graphics {
 		return stroke;
 	}
 
-	private void setAntiAlias(boolean aa) {
-		drawAntiAlias = aa;
-
-		drawPaint.setAntiAlias(aa);
-		fillPaint.setAntiAlias(aa);
-	}
-
-	private void setAntiAliasText(boolean aa) {
-		textAntiAlias = aa;
-	}
-
 	public void setFont(Font font) {
-		if (font == null) {
-			font = Font.getDefaultFont();
-		}
-		this.font = font;
-		font.copyInto(drawPaint);
+		this.font = font == null ? Font.getDefaultFont() : font;
 	}
 
 	public Font getFont() {
@@ -218,40 +190,38 @@ public class Graphics {
 	}
 
 	public void setClip(int x, int y, int width, int height) {
-		intRect.set(x, y, x + width, y + height);
+		clip.set(x, y, x + width, y + height);
 		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
 			canvas.restore();
 			canvas.save();
 			canvas.translate(translateX, translateY);
-			canvas.clipRect(intRect);
+			canvas.clipRect(clip);
 		} else {
-			canvas.clipRect(intRect, Region.Op.REPLACE);
+			canvas.clipRect(clip, Region.Op.REPLACE);
 		}
+		canvas.getClipBounds(clip);
 	}
 
 	public void clipRect(int x, int y, int width, int height) {
-		intRect.set(x, y, x + width, y + height);
-		canvas.clipRect(intRect);
+		clip.set(x, y, x + width, y + height);
+		canvas.clipRect(clip);
+		canvas.getClipBounds(clip);
 	}
 
 	public int getClipX() {
-		canvas.getClipBounds(intRect);
-		return intRect.left;
+		return clip.left;
 	}
 
 	public int getClipY() {
-		canvas.getClipBounds(intRect);
-		return intRect.top;
+		return clip.top;
 	}
 
 	public int getClipWidth() {
-		canvas.getClipBounds(intRect);
-		return intRect.width();
+		return clip.width();
 	}
 
 	public int getClipHeight() {
-		canvas.getClipBounds(intRect);
-		return intRect.height();
+		return clip.height();
 	}
 
 	public void translate(int dx, int dy) {
@@ -259,6 +229,7 @@ public class Graphics {
 		translateY += dy;
 
 		canvas.translate(dx, dy);
+		canvas.getClipBounds(clip);
 	}
 
 	public int getTranslateX() {
@@ -267,10 +238,6 @@ public class Graphics {
 
 	public int getTranslateY() {
 		return translateY;
-	}
-
-	public void clear(int color) {
-		canvas.drawColor(color, PorterDuff.Mode.SRC);
 	}
 
 	public void drawLine(int x1, int y1, int x2, int y2) {
@@ -290,47 +257,37 @@ public class Graphics {
 	}
 
 	public void drawArc(int x, int y, int width, int height, int startAngle, int arcAngle) {
-		floatRect.set(x, y, x + width, y + height);
-		canvas.drawArc(floatRect, -startAngle, -arcAngle, false, drawPaint);
-	}
-
-	public void drawArc(RectF oval, int startAngle, int arcAngle) {
-		canvas.drawArc(oval, -startAngle, -arcAngle, false, drawPaint);
+		if (width < 0 || height < 0) return;
+		rectF.set(x, y, x + width, y + height);
+		canvas.drawArc(rectF, -startAngle, -arcAngle, false, drawPaint);
 	}
 
 	public void fillArc(int x, int y, int width, int height, int startAngle, int arcAngle) {
-		floatRect.set(x, y, x + width, y + height);
-		canvas.drawArc(floatRect, -startAngle, -arcAngle, true, fillPaint);
-	}
-
-	public void fillArc(RectF oval, int startAngle, int arcAngle) {
-		canvas.drawArc(oval, -startAngle, -arcAngle, true, fillPaint);
+		if (width <= 0 || height <= 0) return;
+		rectF.set(x, y, x + width, y + height);
+		canvas.drawArc(rectF, -startAngle, -arcAngle, true, fillPaint);
 	}
 
 	public void drawRect(int x, int y, int width, int height) {
+		if (width < 0 || height < 0) return;
 		canvas.drawRect(x, y, x + width, y + height, drawPaint);
 	}
 
 	public void fillRect(int x, int y, int width, int height) {
+		if (width <= 0 || height <= 0) return;
 		canvas.drawRect(x, y, x + width, y + height, fillPaint);
 	}
 
 	public void drawRoundRect(int x, int y, int width, int height, int arcWidth, int arcHeight) {
-		floatRect.set(x, y, x + width, y + height);
-		canvas.drawRoundRect(floatRect, arcWidth, arcHeight, drawPaint);
-	}
-
-	public void drawRoundRect(RectF rect, int arcWidth, int arcHeight) {
-		canvas.drawRoundRect(rect, arcWidth, arcHeight, drawPaint);
+		if (width < 0 || height < 0) return;
+		rectF.set(x, y, x + width, y + height);
+		canvas.drawRoundRect(rectF, arcWidth * 0.5f, arcHeight * 0.5f, drawPaint);
 	}
 
 	public void fillRoundRect(int x, int y, int width, int height, int arcWidth, int arcHeight) {
-		floatRect.set(x, y, x + width, y + height);
-		canvas.drawRoundRect(floatRect, arcWidth, arcHeight, fillPaint);
-	}
-
-	public void fillRoundRect(RectF rect, int arcWidth, int arcHeight) {
-		canvas.drawRoundRect(rect, arcWidth, arcHeight, fillPaint);
+		if (width < 0 || height < 0) return;
+		rectF.set(x, y, x + width, y + height);
+		canvas.drawRoundRect(rectF, arcWidth * 0.5f, arcHeight * 0.5f, fillPaint);
 	}
 
 	public void fillTriangle(int x1, int y1, int x2, int y2, int x3, int y3) {
@@ -342,146 +299,292 @@ public class Graphics {
 	}
 
 	public void drawChars(char[] data, int offset, int length, int x, int y, int anchor) {
-		drawString(new String(data, offset, length), x, y, anchor);
+		Paint paint = font.paint;
+		if ((anchor & Graphics.RIGHT) != 0) {
+			paint.setTextAlign(Paint.Align.RIGHT);
+		} else if ((anchor & Graphics.HCENTER) != 0) {
+			paint.setTextAlign(Paint.Align.CENTER);
+		} else {
+			paint.setTextAlign(Paint.Align.LEFT);
+		}
+
+		float ly;
+		if ((anchor & Graphics.BOTTOM) != 0) {
+			ly = y - font.descent;
+		} else if ((anchor & Graphics.VCENTER) != 0) {
+			ly = y - (font.descent + font.ascent) / 2.0f;
+		} else if ((anchor & Graphics.BASELINE) != 0) {
+			ly = y;
+		} else {
+			ly = y - font.ascent;
+		}
+
+		paint.setColor(fillPaint.getColor());
+		canvas.drawText(data, offset, length, x, ly, paint);
 	}
 
 	public void drawString(String text, int x, int y, int anchor) {
-		if (anchor == 0) {
-			anchor = LEFT | TOP;
-		}
-
-		if ((anchor & Graphics.LEFT) != 0) {
-			drawPaint.setTextAlign(Paint.Align.LEFT);
-		} else if ((anchor & Graphics.RIGHT) != 0) {
-			drawPaint.setTextAlign(Paint.Align.RIGHT);
+		Paint paint = font.paint;
+		if ((anchor & Graphics.RIGHT) != 0) {
+			paint.setTextAlign(Paint.Align.RIGHT);
 		} else if ((anchor & Graphics.HCENTER) != 0) {
-			drawPaint.setTextAlign(Paint.Align.CENTER);
+			paint.setTextAlign(Paint.Align.CENTER);
+		} else {
+			paint.setTextAlign(Paint.Align.LEFT);
 		}
 
-		if ((anchor & Graphics.TOP) != 0) {
-			y -= drawPaint.ascent();
-		} else if ((anchor & Graphics.BOTTOM) != 0) {
-			y -= drawPaint.descent();
+		float ly;
+		if ((anchor & Graphics.BOTTOM) != 0) {
+			ly = y - font.descent;
 		} else if ((anchor & Graphics.VCENTER) != 0) {
-			y -= drawPaint.ascent() + (drawPaint.descent() - drawPaint.ascent()) / 2;
+			ly = y - (font.descent + font.ascent) / 2.0f;
+		} else if ((anchor & Graphics.BASELINE) != 0) {
+			ly = y;
+		} else {
+			ly = y - font.ascent;
 		}
 
-		drawPaint.setAntiAlias(textAntiAlias);
-		drawPaint.setStyle(Paint.Style.FILL);
-		canvas.drawText(text, x, y, drawPaint);
-		drawPaint.setStyle(Paint.Style.STROKE);
-		drawPaint.setAntiAlias(drawAntiAlias);
+		paint.setColor(fillPaint.getColor());
+		canvas.drawText(text, x, ly, paint);
 	}
 
 	public void drawImage(Image image, int x, int y, int anchor) {
+		float lx;
 		if ((anchor & Graphics.RIGHT) != 0) {
-			x -= image.getWidth();
+			lx = x - image.getWidth();
 		} else if ((anchor & Graphics.HCENTER) != 0) {
-			x -= image.getWidth() / 2;
-		}
-
-		if ((anchor & Graphics.BOTTOM) != 0) {
-			y -= image.getHeight();
-		} else if ((anchor & Graphics.VCENTER) != 0) {
-			y -= image.getHeight() / 2;
-		}
-
-		canvas.drawBitmap(image.getBitmap(), x, y, null);
-	}
-
-	public void drawImage(Image image, int x, int y, int width, int height, boolean filter, int alpha) {
-		imagePaint.setFilterBitmap(filter);
-		imagePaint.setAlpha(alpha);
-
-		if (width > 0 && height > 0) {
-			intRect.set(x, y, x + width, y + height);
-			canvas.drawBitmap(image.getBitmap(), null, intRect, imagePaint);
+			lx = x - image.getWidth() / 2.0f;
 		} else {
-			canvas.drawBitmap(image.getBitmap(), x, y, imagePaint);
+			lx = x;
 		}
+
+		float ly;
+		if ((anchor & Graphics.BOTTOM) != 0) {
+			ly = y - image.getHeight();
+		} else if ((anchor & Graphics.VCENTER) != 0) {
+			ly = y - image.getHeight() / 2.0f;
+		} else {
+			ly = y;
+		}
+
+		canvas.drawBitmap(image.getBitmap(), lx, ly, null);
 	}
 
 	public void drawSubstring(String str, int offset, int len, int x, int y, int anchor) {
-		drawString(str.substring(offset, len + offset), x, y, anchor);
+		Paint paint = font.paint;
+		if ((anchor & Graphics.RIGHT) != 0) {
+			paint.setTextAlign(Paint.Align.RIGHT);
+		} else if ((anchor & Graphics.HCENTER) != 0) {
+			paint.setTextAlign(Paint.Align.CENTER);
+		} else {
+			paint.setTextAlign(Paint.Align.LEFT);
+		}
+
+		float ly;
+		if ((anchor & Graphics.BOTTOM) != 0) {
+			ly = y - font.descent;
+		} else if ((anchor & Graphics.VCENTER) != 0) {
+			ly = y - (font.descent + font.ascent) / 2.0f;
+		} else if ((anchor & Graphics.BASELINE) != 0) {
+			ly = y;
+		} else {
+			ly = y - font.ascent;
+		}
+
+		paint.setColor(fillPaint.getColor());
+		canvas.drawText(str, offset, offset + len, x, ly, paint);
 	}
 
-	public void drawRegion(Image image, int srcx, int srcy, int width, int height, int transform, int dstx, int dsty, int anchor) {
-		if (width == 0 || height == 0) return;
+	public void drawRegion(Image image, int x_src, int y_src, int width, int height,
+						   int transform, int x_dst, int y_dst, int anchor) {
+		if (width <= 0 || height <= 0) return;
 
-		if (transform != 0) {
-			Rect srcR = new Rect(srcx, srcy, srcx + width, srcy + height);
-			RectF dstR = new RectF(0, 0, width, height);
-			RectF deviceR = new RectF();
-			Matrix matrix = Sprite.transformMatrix(transform, width / 2, height / 2);
-			matrix.mapRect(deviceR, dstR);
+		Rect srcR = rect;
+		RectF dstR = rectF;
+		float dx;
+		float dy;
+		srcR.set(x_src, y_src, x_src + width, y_src + height);
 
-			if ((anchor & Graphics.RIGHT) != 0) {
-				dstx -= deviceR.width();
-			} else if ((anchor & Graphics.HCENTER) != 0) {
-				dstx -= deviceR.width() / 2;
+		Matrix matrix = new Matrix();
+		switch (transform) {
+			case TRANS_NONE: {
+				if ((anchor & Graphics.RIGHT) != 0) {
+					dx = x_dst - width;
+				} else if ((anchor & Graphics.HCENTER) != 0) {
+					dx = x_dst - width / 2.0f;
+				} else {
+					dx = x_dst;
+				}
+				if ((anchor & Graphics.BOTTOM) != 0) {
+					dy = y_dst - height;
+				} else if ((anchor & Graphics.VCENTER) != 0) {
+					dy = y_dst - height / 2.0f;
+				} else {
+					dy = y_dst;
+				}
+
+				dstR.set(dx, dy, dx + width, dy + height);
+				canvas.drawBitmap(image.getBitmap(), srcR, dstR, null);
+				return;
 			}
-			if ((anchor & Graphics.BOTTOM) != 0) {
-				dsty -= deviceR.height();
-			} else if ((anchor & Graphics.VCENTER) != 0) {
-				dsty -= deviceR.height() / 2;
-			}
+			case TRANS_ROT90:
+				matrix.preRotate(90);
+				break;
+			case TRANS_ROT180:
+				matrix.preRotate(180);
+				break;
+			case TRANS_ROT270:
+				matrix.preRotate(270);
+				break;
+			case TRANS_MIRROR:
+				matrix.preScale(-1, 1);
+				break;
+			case TRANS_MIRROR_ROT90:
+				matrix.preRotate(90);
+				matrix.preScale(-1, 1);
+				break;
+			case TRANS_MIRROR_ROT180:
+				matrix.preRotate(180);
+				matrix.preScale(-1, 1);
+				break;
+			case TRANS_MIRROR_ROT270:
+				matrix.preRotate(270);
+				matrix.preScale(-1, 1);
+				break;
+			default:
+				throw new IllegalArgumentException("Illegal transform=" + transform);
+		}
 
-			canvas.save();
-			canvas.translate(-deviceR.left + dstx, -deviceR.top + dsty);
-			canvas.concat(matrix);
-			canvas.drawBitmap(image.getBitmap(), srcR, dstR, null);
-			canvas.restore();
+		dstR.set(0, 0, width, height);
+		matrix.mapRect(dstR);
+
+		if ((anchor & Graphics.RIGHT) != 0) {
+			dx = x_dst - dstR.width();
+		} else if ((anchor & Graphics.HCENTER) != 0) {
+			dx = x_dst - dstR.width() / 2.0f;
 		} else {
-			if ((anchor & Graphics.RIGHT) != 0) {
-				dstx -= width;
-			} else if ((anchor & Graphics.HCENTER) != 0) {
-				dstx -= width / 2;
-			}
-			if ((anchor & Graphics.BOTTOM) != 0) {
-				dsty -= height;
-			} else if ((anchor & Graphics.VCENTER) != 0) {
-				dsty -= height / 2;
-			}
+			dx = x_dst;
+		}
+		if ((anchor & Graphics.BOTTOM) != 0) {
+			dy = y_dst - dstR.height();
+		} else if ((anchor & Graphics.VCENTER) != 0) {
+			dy = y_dst - dstR.height() / 2.0f;
+		} else {
+			dy = y_dst;
+		}
 
-			Rect srcR = new Rect(srcx, srcy, srcx + width, srcy + height);
-			RectF dstR = new RectF(dstx, dsty, dstx + width, dsty + height);
+		matrix.postTranslate(Math.round(dx - dstR.left), Math.round(dy - dstR.top));
+		dstR.set(0, 0, width, height);
+
+		canvas.save();
+		canvas.concat(matrix);
+		try {
 			canvas.drawBitmap(image.getBitmap(), srcR, dstR, null);
+		} finally {
+			canvas.restore();
 		}
 	}
 
 	public void drawRGB(int[] rgbData, int offset, int scanlength, int x, int y, int width, int height, boolean processAlpha) {
-		if (width == 0 || height == 0) return;
-		// MIDP allows almost any value of scanlength, drawBitmap is more strict with the stride
-		if (scanlength < width) {
-			scanlength = width;
+		if (rgbData == null) {
+			throw new NullPointerException();
 		}
-		int rows = rgbData.length / scanlength;
-		if (rows < height) {
-			height = rows;
+		if (width == 0 || height == 0) {
+			return;
 		}
-		if (!processAlpha) {
-			for (int iy = 0; iy < height; iy++) {
-				for (int ix = 0; ix < width; ix++) {
-					rgbData[offset + ix + iy * scanlength] |= (0xFF << 24);
-				}
+		if (offset < 0 || offset > rgbData.length) {
+			throw new ArrayIndexOutOfBoundsException();
+		}
+		if (width < 0 || height < 0) {
+			// TODO: 21.03.2021 This situation has not been verified and the correctness of such arguments is unknown.
+			Log.w(getClass().getSimpleName(), "drawRGB: width=" + width + ", height=" + height);
+		}
+		if (scanlength > 0) {
+			if (offset + scanlength * (height - 1) + width > rgbData.length) {
+				throw new ArrayIndexOutOfBoundsException();
+			}
+		} else {
+			if (offset + width > rgbData.length || offset + scanlength * (height - 1) < 0) {
+				throw new ArrayIndexOutOfBoundsException();
 			}
 		}
-		// Use deprecated method due to perfomance issues
-		canvas.drawBitmap(rgbData, offset, scanlength, x, y, width, height, processAlpha, null);
+
+		// copy pixels to a new array and apply processAlpha flag here,
+		// to avoid Android restrictions
+		int[] pixels = new int[height * width];
+		int alphaCorrection = processAlpha ? Color.TRANSPARENT : Color.BLACK;
+		for (int i = 0; i < height; i++) {
+			int s = offset + i * scanlength;
+			int d = i * width;
+			for (int j = 0; j < width; j++) {
+				int pixel = rgbData[s++];
+				pixels[d + j] = alphaCorrection | pixel;
+			}
+		}
+		// Use deprecated method due to performance issues
+		canvas.drawBitmap(pixels, 0, width, x, y, width, height, true, null);
 	}
 
 	public void copyArea(int x_src, int y_src, int width, int height,
 						 int x_dest, int y_dest, int anchor) {
-		Bitmap bitmap = Bitmap.createBitmap(canvasBitmap, x_src, y_src, width, height);
-		drawImage(new Image(bitmap), x_dest, y_dest, anchor);
+		if (width <= 0 || height <= 0) return;
+		final int[] pixels = new int[width * height];
+		canvasBitmap.getPixels(pixels, 0, width, x_src, y_src, width, height);
+		float dx;
+		if ((anchor & Graphics.RIGHT) != 0) {
+			dx = x_dest - width;
+		} else if ((anchor & Graphics.HCENTER) != 0) {
+			dx = x_dest - width / 2.0f;
+		} else {
+			dx = x_dest;
+		}
+		float dy;
+		if ((anchor & Graphics.BOTTOM) != 0) {
+			dy = y_dest - height;
+		} else if ((anchor & Graphics.VCENTER) != 0) {
+			dy = y_dest - height / 2.0f;
+		} else {
+			dy = y_dest;
+		}
+		canvas.drawBitmap(pixels, 0, width, dx, dy, width, height, false, null);
 	}
 
 	public void getPixels(int[] pixels, int offset, int stride,
 						  int x, int y, int width, int height) {
-		canvasBitmap.getPixels(pixels, offset, stride, x, y, width, height);
+		Bitmap b = canvasBitmap;
+		int w = Math.min(width, b.getWidth() - x);
+		int h = Math.min(height, b.getHeight() - y);
+		b.getPixels(pixels, offset, stride, x, y, w, h);
 	}
 
 	public Bitmap getBitmap() {
 		return canvasBitmap;
+	}
+
+	void flush(Image image, int x, int y, int width, int height) {
+		rect.set(x, y, x + width, y + height);
+		canvas.drawBitmap(image.getBitmap(), rect, rect, null);
+	}
+
+	@Override
+	public synchronized void drawFigure(com.vodafone.v10.graphics.j3d.Figure figure,
+										int x, int y,
+										com.vodafone.v10.graphics.j3d.FigureLayout layout,
+										com.vodafone.v10.graphics.j3d.Effect3D effect) {
+		if (g3d == null) g3d = new Graphics3D();
+		g3d.bind(this);
+		g3d.drawFigure(figure, x, y, layout, effect);
+		g3d.release(this);
+	}
+
+	@Override
+	public synchronized void drawFigure(com.motorola.graphics.j3d.Figure figure,
+						   int x, int y,
+						   com.motorola.graphics.j3d.FigureLayout layout,
+						   com.motorola.graphics.j3d.Effect3D effect) {
+		if (g3d == null) g3d = new Graphics3D();
+		g3d.bind(this);
+		g3d.drawFigure(figure, x, y, layout, effect);
+		g3d.release(this);
 	}
 }

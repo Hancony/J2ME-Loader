@@ -21,17 +21,26 @@ import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.net.Uri;
 
-import java.util.LinkedHashMap;
+import org.microemu.cldc.file.FileSystemFileConnection;
+
+import java.io.IOException;
+import java.util.Map;
 
 import javax.microedition.io.ConnectionNotFoundException;
+import javax.microedition.io.Connector;
+import javax.microedition.lcdui.Display;
+import javax.microedition.shell.MidletThread;
 import javax.microedition.util.ContextHolder;
 
 public abstract class MIDlet {
 
-	private static LinkedHashMap<String, String> properties;
-	private boolean destroyAppCalled = false;
+	private static Map<String, String> properties;
 
-	public static void initProps(LinkedHashMap<String, String> p) {
+	protected MIDlet() {
+		Display.getDisplay(this); // init display for this instance
+	}
+
+	public static void initProps(Map<String, String> p) {
 		properties = p;
 	}
 
@@ -43,6 +52,7 @@ public abstract class MIDlet {
 	 * Report the shell that the MIDlet is ready to go into a pause.
 	 */
 	public final void notifyPaused() {
+		MidletThread.notifyPaused();
 	}
 
 	/**
@@ -52,9 +62,7 @@ public abstract class MIDlet {
 	 * Calls to this method from destroyApp() are ignored.
 	 */
 	public final void notifyDestroyed() {
-		if (!destroyAppCalled) {
-			ContextHolder.notifyDestroyed();
-		}
+		MidletThread.notifyDestroyed();
 	}
 
 	/**
@@ -73,32 +81,23 @@ public abstract class MIDlet {
 	 * Called when the application terminates.
 	 *
 	 * @param unconditional unconditional completion flag, has no particular
-	 * sense for Android.
+	 *                      sense for Android.
 	 */
 	public abstract void destroyApp(boolean unconditional) throws MIDletStateChangeException;
 
-	/**
-	 * Correctly call destroyApp(). During the execution of this method,
-	 * notifyDestroyed() calls are ignored.
-	 *
-	 * @param unconditional unconditional completion flag, has no particular
-	 * sense for Android.
-	 */
-	public final void callDestroyApp(boolean unconditional) {
-		destroyAppCalled = true;
+	public boolean platformRequest(String url) throws ConnectionNotFoundException {
 		try {
-			destroyApp(unconditional);
-		} catch (MIDletStateChangeException e) {
-			e.printStackTrace();
-		}
-		destroyAppCalled = false;
-	}
-
-	public boolean platformRequest(String url)
-			throws ConnectionNotFoundException {
-		try {
-			ContextHolder.getCurrentActivity().startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
-		} catch (ActivityNotFoundException e) {
+			Intent intent = new Intent(Intent.ACTION_VIEW);
+			if (url.startsWith("file://")) {
+				FileSystemFileConnection fileConnection = (FileSystemFileConnection) Connector.open(url);
+				intent.setData(fileConnection.getURI());
+				intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+				fileConnection.close();
+			} else {
+				intent.setData(Uri.parse(url));
+			}
+			ContextHolder.getActivity().startActivity(intent);
+		} catch (ActivityNotFoundException | IOException e) {
 			throw new ConnectionNotFoundException();
 		}
 
@@ -110,5 +109,6 @@ public abstract class MIDlet {
 	}
 
 	public final void resumeRequest() {
+		MidletThread.resumeApp();
 	}
 }

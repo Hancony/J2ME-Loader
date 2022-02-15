@@ -25,13 +25,10 @@ import javax.microedition.media.control.MIDIControl;
 
 public class MidiPlayer extends BasePlayer implements MIDIControl {
 
-	private HashMap<String, Control> controls;
-	private MidiDriver midiDriver;
+	private final HashMap<String, Control> controls = new HashMap<>();
+	private final MidiDriver midiDriver = MidiInterface.getDriver();
 
 	public MidiPlayer() {
-		midiDriver = new MidiDriver();
-		midiDriver.start();
-		controls = new HashMap<>();
 		controls.put(MIDIControl.class.getName(), this);
 	}
 
@@ -106,5 +103,13 @@ public class MidiPlayer extends BasePlayer implements MIDIControl {
 	public void shortMidiEvent(int type, int data1, int data2) {
 		byte[] event = new byte[]{(byte) type, (byte) data1, (byte) data2};
 		midiDriver.write(event);
+	}
+
+	@Override
+	public void deallocate() {}
+
+	@Override
+	public void close() {
+		deallocate();
 	}
 }

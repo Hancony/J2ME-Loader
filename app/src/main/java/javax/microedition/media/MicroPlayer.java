@@ -27,7 +27,6 @@ import java.util.HashMap;
 import javax.microedition.amms.control.PanControl;
 import javax.microedition.amms.control.audioeffect.EqualizerControl;
 import javax.microedition.media.control.MetaDataControl;
-import javax.microedition.media.control.ToneControl;
 import javax.microedition.media.control.VolumeControl;
 import javax.microedition.media.protocol.DataSource;
 
@@ -47,7 +46,7 @@ public class MicroPlayer extends BasePlayer implements MediaPlayer.OnCompletionL
 	private InternalMetaData metadata;
 
 	public MicroPlayer(DataSource datasource) {
-		player = new MediaPlayer();
+		player = new AndroidPlayer();
 		player.setOnCompletionListener(this);
 
 		source = datasource;
@@ -60,7 +59,6 @@ public class MicroPlayer extends BasePlayer implements MediaPlayer.OnCompletionL
 
 		metadata = new InternalMetaData();
 		InternalEqualizer equalizer = new InternalEqualizer();
-		InternalToneControl toneControl = new InternalToneControl();
 
 		listeners = new ArrayList<>();
 		controls = new HashMap<>();
@@ -69,7 +67,6 @@ public class MicroPlayer extends BasePlayer implements MediaPlayer.OnCompletionL
 		controls.put(PanControl.class.getName(), this);
 		controls.put(MetaDataControl.class.getName(), metadata);
 		controls.put(EqualizerControl.class.getName(), equalizer);
-		controls.put(ToneControl.class.getName(), toneControl);
 	}
 
 	@Override
@@ -88,7 +85,7 @@ public class MicroPlayer extends BasePlayer implements MediaPlayer.OnCompletionL
 	}
 
 	@Override
-	public void addPlayerListener(PlayerListener playerListener) {
+	public synchronized void addPlayerListener(PlayerListener playerListener) {
 		checkClosed();
 		if (!listeners.contains(playerListener) && playerListener != null) {
 			listeners.add(playerListener);
@@ -96,35 +93,41 @@ public class MicroPlayer extends BasePlayer implements MediaPlayer.OnCompletionL
 	}
 
 	@Override
-	public void removePlayerListener(PlayerListener playerListener) {
+	public synchronized void removePlayerListener(PlayerListener playerListener) {
 		checkClosed();
 		listeners.remove(playerListener);
 	}
 
-	public void postEvent(String event) {
+	public synchronized void postEvent(String event, Object eventData) {
 		for (PlayerListener listener : listeners) {
-			listener.playerUpdate(this, event, source.getLocator());
+			// Callbacks should be async
+			Runnable r = () -> listener.playerUpdate(this, event, eventData);
+			(new Thread(r, "MIDletPlayerCallback")).start();
 		}
 	}
 
 	@Override
 	public synchronized void onCompletion(MediaPlayer mp) {
-		postEvent(PlayerListener.END_OF_MEDIA);
+		if (state == CLOSED) {
+			return;
+		}
+		postEvent(PlayerListener.END_OF_MEDIA, new Long(getMediaTime()));
 
 		if (loopCount == 1) {
 			state = PREFETCHED;
+			player.reset();
 		} else if (loopCount > 1) {
 			loopCount--;
 		}
 
-		if (state == STARTED) {
+		if (state == STARTED && loopCount != -1) {
 			player.start();
-			postEvent(PlayerListener.STARTED);
+			postEvent(PlayerListener.STARTED, new Long(getMediaTime()));
 		}
 	}
 
 	@Override
-	public void realize() throws MediaException {
+	public synchronized void realize() throws MediaException {
 		checkClosed();
 
 		if (state == UNREALIZED) {
@@ -140,7 +143,7 @@ public class MicroPlayer extends BasePlayer implements MediaPlayer.OnCompletionL
 	}
 
 	@Override
-	public void prefetch() throws MediaException {
+	public synchronized void prefetch() throws MediaException {
 		checkClosed();
 
 		if (state == UNREALIZED) {
@@ -149,21 +152,14 @@ public class MicroPlayer extends BasePlayer implements MediaPlayer.OnCompletionL
 
 		if (state == REALIZED) {
 			try {
-				player.prepare();
-
 				MediaMetadataRetriever retriever = new MediaMetadataRetriever();
 				retriever.setDataSource(source.getLocator());
 				metadata.updateMetaData(retriever);
 				retriever.release();
-
-				state = PREFETCHED;
-			} catch (IOException e) {
-				/*
-				 * Only 32 instances of MediaPlayer can be prepared at once, don't throw the MediaException here
-				 * if we can't prepare it now
-				 */
+			} catch (Exception e) {
 				e.printStackTrace();
 			}
+			state = PREFETCHED;
 		}
 	}
 
@@ -175,7 +171,7 @@ public class MicroPlayer extends BasePlayer implements MediaPlayer.OnCompletionL
 			player.start();
 
 			state = STARTED;
-			postEvent(PlayerListener.STARTED);
+			postEvent(PlayerListener.STARTED, new Long(getMediaTime()));
 		}
 	}
 
@@ -186,22 +182,28 @@ public class MicroPlayer extends BasePlayer implements MediaPlayer.OnCompletionL
 			player.pause();
 
 			state = PREFETCHED;
-			postEvent(PlayerListener.STOPPED);
+			postEvent(PlayerListener.STOPPED, new Long(getMediaTime()));
 		}
 	}
 
 	@Override
-	public void deallocate() {
+	public synchronized void deallocate() {
 		stop();
 
-		if (state != UNREALIZED) {
+		if (state == PREFETCHED) {
 			player.reset();
 			state = UNREALIZED;
+
+			try {
+				realize();
+			} catch (MediaException e) {
+				e.printStackTrace();
+			}
 		}
 	}
 
 	@Override
-	public void close() {
+	public synchronized void close() {
 		if (state != CLOSED) {
 			player.release();
 		}
@@ -209,7 +211,7 @@ public class MicroPlayer extends BasePlayer implements MediaPlayer.OnCompletionL
 		source.disconnect();
 
 		state = CLOSED;
-		postEvent(PlayerListener.CLOSED);
+		postEvent(PlayerListener.CLOSED, null);
 	}
 
 	protected void checkClosed() {
@@ -298,7 +300,11 @@ public class MicroPlayer extends BasePlayer implements MediaPlayer.OnCompletionL
 		if (mute) {
 			left = right = 0;
 		} else {
-			left = right = (float) (1 - (Math.log(100 - level) / Math.log(100)));
+			if (level == 100) {
+				left = right = 1.0f;
+			} else {
+				left = right = (float) (1 - (Math.log(100 - level) / Math.log(100)));
+			}
 
 			if (pan >= 0) {
 				left *= (float) (100 - pan) / 100f;
@@ -310,7 +316,7 @@ public class MicroPlayer extends BasePlayer implements MediaPlayer.OnCompletionL
 		}
 
 		player.setVolume(left, right);
-		postEvent(PlayerListener.VOLUME_CHANGED);
+		postEvent(PlayerListener.VOLUME_CHANGED, this);
 	}
 
 	@Override

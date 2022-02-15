@@ -21,45 +21,43 @@ package javax.microedition.lcdui;
 import android.content.Context;
 import android.text.TextUtils;
 import android.view.View;
+import android.view.ViewGroup.LayoutParams;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import java.util.ArrayList;
 
 import javax.microedition.lcdui.event.CommandActionEvent;
-import javax.microedition.lcdui.event.Event;
-import javax.microedition.lcdui.event.EventQueue;
 import javax.microedition.lcdui.event.SimpleEvent;
 import javax.microedition.shell.MicroActivity;
 import javax.microedition.util.ContextHolder;
 
-import androidx.appcompat.app.AppCompatActivity;
-
 public abstract class Displayable {
-	private MicroActivity parent;
-	private String title;
-
-	private ArrayList<Command> commands;
-	private CommandListener listener;
-
-	private int tickermode;
-	private Ticker ticker;
-	private LinearLayout layout;
-	private TextView marquee;
-
-	private static EventQueue queue;
-
 	private static final int TICKER_NO_ACTION = 0;
 	private static final int TICKER_SHOW = 1;
 	private static final int TICKER_HIDE = 2;
 
-	private SimpleEvent msgSetTicker = new SimpleEvent() {
+	protected static int virtualWidth;
+	protected static int virtualHeight;
+
+	protected CommandListener listener;
+
+	private final ArrayList<Command> commands = new ArrayList<>();
+
+	private String title;
+	private int tickerMode;
+	private Ticker ticker;
+	private LinearLayout layout;
+	private TextView marquee;
+
+	private final SimpleEvent msgSetTicker = new SimpleEvent() {
 		@Override
 		public void process() {
 			if (ticker != null) {
 				marquee.setText(ticker.getString());
 			}
-			switch (tickermode) {
+			switch (tickerMode) {
 				case TICKER_SHOW:
 					layout.addView(marquee, 0);
 					break;
@@ -67,36 +65,35 @@ public abstract class Displayable {
 					layout.removeView(marquee);
 					break;
 			}
-			tickermode = TICKER_NO_ACTION;
+			tickerMode = TICKER_NO_ACTION;
 		}
 	};
 
-	static {
-		queue = new EventQueue();
-		queue.startProcessing();
+	public Displayable() {}
+
+	public static void setVirtualSize(int virtualWidth, int virtualHeight) {
+		Displayable.virtualWidth = virtualWidth;
+		Displayable.virtualHeight = virtualHeight;
 	}
 
-	public Displayable() {
-		commands = new ArrayList<>();
-		listener = null;
+	public static int getVirtualWidth() {
+		return virtualWidth;
 	}
 
-	public void setParentActivity(MicroActivity activity) {
-		parent = activity;
+	public static int getVirtualHeight() {
+		return virtualHeight;
 	}
 
-	public AppCompatActivity getParentActivity() {
-		if (parent == null) {
-			return ContextHolder.getCurrentActivity();
-		}
-		return parent;
+	public MicroActivity getParentActivity() {
+		return ContextHolder.getActivity();
 	}
 
 	public void setTitle(String title) {
 		this.title = title;
 
-		if (parent != null) {
-			parent.runOnUiThread(() -> parent.getSupportActionBar().setTitle(Displayable.this.title));
+		MicroActivity activity = ContextHolder.getActivity();
+		if (isShown()) {
+			activity.runOnUiThread(() -> activity.getSupportActionBar().setTitle(title));
 		}
 	}
 
@@ -105,10 +102,10 @@ public abstract class Displayable {
 	}
 
 	public boolean isShown() {
-		if (parent != null) {
-			return parent.isVisible() && parent.getCurrent() == this;
+		MicroActivity activity = ContextHolder.getActivity();
+		if (activity != null) {
+			return activity.isVisible() && activity.getCurrent() == this;
 		}
-
 		return false;
 	}
 
@@ -118,6 +115,8 @@ public abstract class Displayable {
 
 			layout = new LinearLayout(context);
 			layout.setOrientation(LinearLayout.VERTICAL);
+			layout.setLayoutParams(new FrameLayout.LayoutParams(
+					LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
 
 			marquee = new TextView(context);
 			marquee.setTextAppearance(context, android.R.style.TextAppearance_Medium);
@@ -166,32 +165,24 @@ public abstract class Displayable {
 
 	public void fireCommandAction(Command c, Displayable d) {
 		if (listener != null) {
-			queue.postEvent(CommandActionEvent.getInstance(listener, c, d));
+			Display.postEvent(CommandActionEvent.getInstance(listener, c, d));
 		}
 	}
 
-	public EventQueue getEventQueue() {
-		return queue;
-	}
-
-	public void postEvent(Event event) {
-		queue.postEvent(event);
-	}
-
 	public int getWidth() {
-		return ContextHolder.getDisplayWidth();
+		return virtualWidth;
 	}
 
 	public int getHeight() {
-		return ContextHolder.getDisplayHeight();
+		return virtualHeight;
 	}
 
 	public void setTicker(Ticker newticker) {
 		if (layout != null) {
 			if (ticker == null && newticker != null) {
-				tickermode = TICKER_SHOW;
+				tickerMode = TICKER_SHOW;
 			} else if (ticker != null && newticker == null) {
-				tickermode = TICKER_HIDE;
+				tickerMode = TICKER_HIDE;
 			}
 
 			ticker = newticker;
@@ -217,7 +208,7 @@ public abstract class Displayable {
 		Command[] array = commands.toArray(new Command[0]);
 		for (Command cmd : array) {
 			if (cmd.hashCode() == id) {
-				postEvent(CommandActionEvent.getInstance(listener, cmd, this));
+				Display.postEvent(CommandActionEvent.getInstance(listener, cmd, this));
 			}
 		}
 		return true;

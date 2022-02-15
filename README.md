@@ -11,6 +11,7 @@ This project is a fork of [J2meLoader](https://github.com/NaikSoftware/J2meLoade
 System requirements: Android 4.0+  
 [4PDA.ru discussion](http://4pda.ru/forum/index.php?showtopic=824201)  
 [XDA-Developers](https://forum.xda-developers.com/android/apps-games/app-j2me-loader-t3777889)  
+[Discord](https://discord.gg/Ag4rcpz)  
 [Automated builds](https://install.appcenter.ms/users/nikita36078/apps/j2me-loader/distribution_groups/testers)
 
 <a href="https://play.google.com/store/apps/details?id=ru.playsoftware.j2meloader">
@@ -21,7 +22,7 @@ System requirements: Android 4.0+
 ## Compatibility
 [List of the tested Java Games (Touchscreen)](https://github.com/nikita36078/J2ME-Loader/wiki/List-of-Tested-Java-Games-(Touchscreen))  
 [List of the tested Java Games (Non Touchscreen)](https://github.com/nikita36078/J2ME-Loader/wiki/List-of-Tested-Java-Games-(Non-Touchscreen))  
-[List of the Java Games with glitches](https://github.com/nikita36078/J2ME-Loader/wiki/List-of-Java-Games-with-glitches)
+[List of the Java Games with Bugs](https://github.com/nikita36078/J2ME-Loader/wiki/List-of-Java-Games-with-Bugs)
 
 ## Tips
  - Enabling filtering in some cases can greatly reduce performance. Disable this option if game is too slow.
@@ -33,6 +34,6 @@ System requirements: Android 4.0+
 <img src="/screenshots/screen3.jpg" width="288" height="512"> <img src="/screenshots/screen4.jpg" width="288" height="512">
 
 ## License
-> Copyright 2017-2019 Nikita Shakarun.
+> Copyright 2017-2021 Nikita Shakarun.
 > Licensed under the [Apache License, Version 2.0.](http://www.apache.org/licenses/LICENSE-2.0)  
 > (See the [LICENSE](https://github.com/nikita36078/J2ME-Loader/blob/master/LICENSE) file for the whole license text.)

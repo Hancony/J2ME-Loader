@@ -16,34 +16,71 @@
 
 package ru.playsoftware.j2meloader.settings;
 
+import android.content.Intent;
+import android.graphics.Rect;
 import android.os.Bundle;
 import android.util.SparseIntArray;
 import android.view.KeyEvent;
 import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
+import android.view.MotionEvent;
 import android.view.View;
 import android.widget.Button;
+import android.widget.TextView;
+import android.widget.Toast;
 
-import javax.microedition.lcdui.Canvas;
-
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.ActionBar;
-import androidx.appcompat.app.AlertDialog;
+
+import com.google.gson.GsonBuilder;
+
+import java.io.File;
+
+import javax.microedition.lcdui.Canvas;
+import javax.microedition.lcdui.keyboard.KeyMapper;
+
 import ru.playsoftware.j2meloader.R;
 import ru.playsoftware.j2meloader.base.BaseActivity;
+import ru.playsoftware.j2meloader.config.ProfileModel;
+import ru.playsoftware.j2meloader.config.ProfilesManager;
+import ru.playsoftware.j2meloader.util.SparseIntArrayAdapter;
 
 public class KeyMapperActivity extends BaseActivity implements View.OnClickListener {
-	private static SparseIntArray idToCanvasKey = new SparseIntArray();
-	private static SparseIntArray androidToMIDP;
+	private static final String KEY_SAVE = "KEY_MAP_SAVE";
+	private final SparseIntArray defaultKeyMap = KeyMapper.getDefaultKeyMap();
+	private final SparseIntArray idToCanvasKey = new SparseIntArray();
+	private final Rect popupRect = new Rect();
+	private SparseIntArray androidToMIDP;
+	private ProfileModel params;
+	private View popupLayout;
+	private TextView popupMsg;
+	private View keyMapperLayer;
+	private int canvasKey;
 
 	@Override
 	public void onCreate(@Nullable Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
+		Intent intent = getIntent();
+		String path = intent.getDataString();
+		if (path == null) {
+			Toast.makeText(this, "Error", Toast.LENGTH_SHORT).show();
+			finish();
+			return;
+		}
 		setContentView(R.layout.activity_keymapper);
 		ActionBar actionBar = getSupportActionBar();
-		actionBar.setDisplayHomeAsUpEnabled(true);
-		actionBar.setTitle(R.string.pref_map_keys);
+		if (actionBar != null) {
+			actionBar.setDisplayHomeAsUpEnabled(true);
+			actionBar.setTitle(R.string.pref_map_keys);
+		}
+		params = ProfilesManager.loadConfig(new File(path));
+
+		keyMapperLayer = findViewById(R.id.keyMapperLayer);
+		popupLayout = findViewById(R.id.keyMapperPopup);
+		popupMsg = findViewById(R.id.keyMapperPopupMsg);
+
 		setupButton(R.id.virtual_key_left_soft, Canvas.KEY_SOFT_LEFT);
 		setupButton(R.id.virtual_key_right_soft, Canvas.KEY_SOFT_RIGHT);
 		setupButton(R.id.virtual_key_d, Canvas.KEY_SEND);
@@ -65,7 +102,43 @@ public class KeyMapperActivity extends BaseActivity implements View.OnClickListe
 		setupButton(R.id.virtual_key_0, Canvas.KEY_NUM0);
 		setupButton(R.id.virtual_key_star, Canvas.KEY_STAR);
 		setupButton(R.id.virtual_key_pound, Canvas.KEY_POUND);
-		androidToMIDP = KeyMapper.getArrayPref(this);
+		setupButton(R.id.virtual_key_a, KeyMapper.SE_KEY_SPECIAL_GAMING_A);
+		setupButton(R.id.virtual_key_b, KeyMapper.SE_KEY_SPECIAL_GAMING_B);
+		setupButton(R.id.virtual_key_menu, KeyMapper.KEY_OPTIONS_MENU);
+		if (savedInstanceState == null) {
+			SparseIntArray keyMap = params.keyMappings;
+			androidToMIDP = keyMap == null ? defaultKeyMap.clone() : keyMap.clone();
+		} else {
+			String save = savedInstanceState.getString(KEY_SAVE);
+			if (save == null) {
+				androidToMIDP = defaultKeyMap.clone();
+			} else if (save.isEmpty()) {
+				SparseIntArray keyMap = params.keyMappings;
+				androidToMIDP = keyMap == null ? defaultKeyMap.clone() : keyMap.clone();
+			} else {
+				androidToMIDP = new GsonBuilder()
+						.registerTypeAdapter(SparseIntArray.class, new SparseIntArrayAdapter())
+						.create()
+						.fromJson(save, SparseIntArray.class);
+			}
+		}
+	}
+
+	@Override
+	protected void onSaveInstanceState(@NonNull Bundle outState) {
+		if (!equalMaps(androidToMIDP, defaultKeyMap)) {
+			if (!equalMaps(params.keyMappings, androidToMIDP)) {
+				String currMap = new GsonBuilder()
+						.registerTypeAdapter(SparseIntArray.class, new SparseIntArrayAdapter())
+						.create()
+						.toJson(androidToMIDP);
+				outState.putString(KEY_SAVE, currMap);
+			} else {
+				outState.putString(KEY_SAVE, "");
+			}
+		}
+
+		super.onSaveInstanceState(outState);
 	}
 
 	private void setupButton(int resId, int index) {
@@ -77,38 +150,27 @@ public class KeyMapperActivity extends BaseActivity implements View.OnClickListe
 	@Override
 	public void onClick(View v) {
 		int canvasKey = idToCanvasKey.get(v.getId());
-		if (canvasKey != 0) {
-			showMappingDialog(canvasKey);
-		}
+		showMappingDialog(canvasKey);
 	}
 
 	private void showMappingDialog(int canvasKey) {
-		int id = androidToMIDP.indexOfValue(canvasKey);
-		String keyName = "";
-		if (id >= 0) {
-			keyName = KeyEvent.keyCodeToString(androidToMIDP.keyAt(id));
+		this.canvasKey = canvasKey;
+		SparseIntArray androidToMIDP = this.androidToMIDP;
+		int idx = androidToMIDP.indexOfValue(canvasKey);
+		String keyName;
+		if (idx < 0) {
+			keyName = getString(R.string.mapping_dialog_key_not_specified);
+		} else {
+			keyName = KeyEvent.keyCodeToString(androidToMIDP.keyAt(idx));
 		}
-		AlertDialog.Builder builder = new AlertDialog.Builder(this)
-				.setTitle(R.string.mapping_dialog_title)
-				.setMessage(getString(R.string.mapping_dialog_message, keyName))
-				.setOnKeyListener((dialog, keyCode, event) -> {
-					if (keyCode == KeyEvent.KEYCODE_BACK) {
-						dialog.dismiss();
-						return false;
-					} else {
-						deleteDuplicates(canvasKey);
-						androidToMIDP.put(keyCode, canvasKey);
-						KeyMapper.saveArrayPref(this, androidToMIDP);
-						dialog.dismiss();
-						return true;
-					}
-				});
-		builder.show();
+		popupMsg.setText(getString(R.string.mapping_dialog_message, keyName));
+		keyMapperLayer.setVisibility(View.VISIBLE);
 	}
 
 	private void deleteDuplicates(int value) {
-		for (int i = 0; i < androidToMIDP.size(); i++) {
-			if (androidToMIDP.indexOfValue(value) == i) {
+		SparseIntArray androidToMIDP = this.androidToMIDP;
+		for (int i = androidToMIDP.size() - 1; i >= 0; i--) {
+			if (androidToMIDP.valueAt(i) == value) {
 				androidToMIDP.removeAt(i);
 			}
 		}
@@ -123,16 +185,78 @@ public class KeyMapperActivity extends BaseActivity implements View.OnClickListe
 
 	@Override
 	public boolean onOptionsItemSelected(MenuItem item) {
-		switch (item.getItemId()) {
-			case android.R.id.home:
-				finish();
-				break;
-			case R.id.action_reset_mapping:
-				androidToMIDP.clear();
-				KeyMapper.initArray(androidToMIDP);
-				KeyMapper.saveArrayPref(this, androidToMIDP);
-				break;
+		int itemId = item.getItemId();
+		if (itemId == android.R.id.home) {
+			onBackPressed();
+		} else if (itemId == R.id.action_reset_mapping) {
+			androidToMIDP = defaultKeyMap.clone();
 		}
 		return super.onOptionsItemSelected(item);
+	}
+
+	@Override
+	public void onBackPressed() {
+		SparseIntArray newMap = androidToMIDP;
+		if (newMap.indexOfValue(KeyMapper.KEY_OPTIONS_MENU) < 0) {
+			Toast.makeText(this, R.string.alert_map_menu, Toast.LENGTH_SHORT).show();
+			return;
+		}
+		SparseIntArray oldMap = params.keyMappings;
+		if (equalMaps(newMap, defaultKeyMap)) {
+			newMap = null;
+		}
+		if (!equalMaps(oldMap, newMap)) {
+			params.keyMappings = newMap;
+			ProfilesManager.saveConfig(params);
+		}
+		super.onBackPressed();
+	}
+
+	private boolean equalMaps(SparseIntArray map1, SparseIntArray map2) {
+		if (map1 == map2) {
+			return true;
+		}
+		if (map1 == null || map2 == null || map1.size() != map2.size()) {
+			return false;
+		}
+		for (int i = 0, size = map1.size(); i < size; i++) {
+			if (map2.keyAt(i) != map1.keyAt(i) ||
+					map2.valueAt(i) != map1.valueAt(i)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	@Override
+	public boolean dispatchKeyEvent(KeyEvent event) {
+		if (keyMapperLayer.getVisibility() == View.VISIBLE
+				&& event.getAction() == KeyEvent.ACTION_DOWN) {
+			int keyCode = event.getKeyCode();
+			switch (keyCode) {
+				case KeyEvent.KEYCODE_HOME:
+				case KeyEvent.KEYCODE_VOLUME_UP:
+				case KeyEvent.KEYCODE_VOLUME_DOWN:
+					break;
+				default:
+					deleteDuplicates(canvasKey);
+					androidToMIDP.put(keyCode, canvasKey);
+					keyMapperLayer.setVisibility(View.GONE);
+					return true;
+			}
+		}
+		return super.dispatchKeyEvent(event);
+	}
+
+	@Override
+	public boolean dispatchTouchEvent(MotionEvent event) {
+		if (keyMapperLayer.getVisibility() == View.VISIBLE && event.getAction() == MotionEvent.ACTION_DOWN) {
+			popupLayout.getGlobalVisibleRect(popupRect);
+			if (!popupRect.contains(((int) event.getX()), ((int) event.getY()))) {
+				keyMapperLayer.setVisibility(View.GONE);
+			}
+			return true;
+		}
+		return super.dispatchTouchEvent(event);
 	}
 }

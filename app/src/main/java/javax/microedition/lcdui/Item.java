@@ -25,6 +25,8 @@ import android.view.ViewGroup.LayoutParams;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import androidx.appcompat.widget.AppCompatTextView;
+
 import java.util.ArrayList;
 
 import javax.microedition.lcdui.event.CommandActionEvent;
@@ -68,22 +70,24 @@ public abstract class Item implements View.OnCreateContextMenuListener {
 
 	private Form owner;
 
-	private ArrayList<Command> commands = new ArrayList<>();
+	private final ArrayList<Command> commands = new ArrayList<>();
 	private ItemCommandListener listener = null;
 	private Command defaultCommand;
 
-	private SimpleEvent msgSetContextMenuListener = new SimpleEvent() {
+	private final SimpleEvent msgSetContextMenuListener = new SimpleEvent() {
 		@Override
 		public void process() {
 			if (listener != null) {
+				labelview.setOnCreateContextMenuListener(Item.this);
 				contentview.setOnCreateContextMenuListener(Item.this);
 			} else {
+				labelview.setLongClickable(false);
 				contentview.setLongClickable(false);
 			}
 		}
 	};
 
-	private SimpleEvent msgSetLabel = new SimpleEvent() {
+	private final SimpleEvent msgSetLabel = new SimpleEvent() {
 		@Override
 		public void process() {
 			labelview.setText(label);
@@ -169,7 +173,7 @@ public abstract class Item implements View.OnCreateContextMenuListener {
 			layout = new LinearLayout(context);
 			layout.setOrientation(LinearLayout.VERTICAL);
 
-			labelview = new TextView(context);
+			labelview = new AppCompatTextView(context);
 			labelview.setTextAppearance(context, android.R.style.TextAppearance_Medium);
 			labelview.setText(label);
 
@@ -189,7 +193,11 @@ public abstract class Item implements View.OnCreateContextMenuListener {
 	private LinearLayout.LayoutParams getLayoutParams() {
 		int hwrap = LayoutParams.MATCH_PARENT;
 		int vwrap = LayoutParams.WRAP_CONTENT;
-		int gravity = 0;
+		int gravity = Gravity.LEFT;
+
+		if (this instanceof ImageItem) {
+			hwrap = LayoutParams.WRAP_CONTENT;
+		}
 
 		if ((layoutmode & LAYOUT_SHRINK) != 0) {
 			hwrap = LayoutParams.WRAP_CONTENT;
@@ -205,12 +213,12 @@ public abstract class Item implements View.OnCreateContextMenuListener {
 
 		int horizontal = layoutmode & HORIZONTAL_GRAVITY_MASK;
 		if (horizontal == LAYOUT_CENTER) {
-			gravity |= Gravity.CENTER_HORIZONTAL;
+			gravity = Gravity.CENTER_HORIZONTAL;
 		} else if (horizontal == LAYOUT_RIGHT) {
-			gravity |= Gravity.RIGHT;
+			gravity = Gravity.RIGHT;
 			hwrap = LayoutParams.WRAP_CONTENT;
 		} else if (horizontal == LAYOUT_LEFT) {
-			gravity |= Gravity.LEFT;
+			gravity = Gravity.LEFT;
 			hwrap = LayoutParams.WRAP_CONTENT;
 		}
 
@@ -318,7 +326,7 @@ public abstract class Item implements View.OnCreateContextMenuListener {
 		for (Command cmd : commands) {
 			if (cmd.hashCode() == id) {
 				if (owner != null) {
-					owner.postEvent(CommandActionEvent.getInstance(listener, cmd, this));
+					Display.postEvent(CommandActionEvent.getInstance(listener, cmd, this));
 				}
 				return true;
 			}
@@ -328,7 +336,7 @@ public abstract class Item implements View.OnCreateContextMenuListener {
 
 	public void fireDefaultCommandAction() {
 		if (defaultCommand != null) {
-			owner.postEvent(CommandActionEvent.getInstance(listener, defaultCommand, this));
+			Display.postEvent(CommandActionEvent.getInstance(listener, defaultCommand, this));
 		}
 	}
 }

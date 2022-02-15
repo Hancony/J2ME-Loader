@@ -22,11 +22,11 @@
  *  See the LGPL or the AL for the specific language governing permissions and
  *  limitations.
  */
-
 package javax.microedition.rms.impl;
 
 import java.util.Collections;
-import java.util.Comparator;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Vector;
 
 import javax.microedition.rms.InvalidRecordIDException;
@@ -39,15 +39,15 @@ import javax.microedition.rms.RecordStoreException;
 import javax.microedition.rms.RecordStoreNotOpenException;
 
 public class RecordEnumerationImpl implements RecordEnumeration {
-	private RecordStoreImpl recordStoreImpl;
-	private RecordFilter filter;
-	private RecordComparator comparator;
+	private final RecordStoreImpl recordStoreImpl;
+	private final RecordFilter filter;
+	private final RecordComparator comparator;
 	private boolean keepUpdated;
 
-	private Vector enumerationRecords = new Vector();
+	private final Vector<EnumerationRecord> enumerationRecords = new Vector<>();
 	private int currentRecord;
 
-	private RecordListener recordListener = new RecordListener() {
+	private final RecordListener recordListener = new RecordListener() {
 
 		@Override
 		public void recordAdded(RecordStore recordStore, int recordId) {
@@ -66,7 +66,8 @@ public class RecordEnumerationImpl implements RecordEnumeration {
 
 	};
 
-	public RecordEnumerationImpl(RecordStoreImpl recordStoreImpl, RecordFilter filter, RecordComparator comparator, boolean keepUpdated) {
+	public RecordEnumerationImpl(RecordStoreImpl recordStoreImpl, RecordFilter filter,
+								 RecordComparator comparator, boolean keepUpdated) {
 		this.recordStoreImpl = recordStoreImpl;
 		this.filter = filter;
 		this.comparator = comparator;
@@ -85,8 +86,7 @@ public class RecordEnumerationImpl implements RecordEnumeration {
 	}
 
 	@Override
-	public byte[] nextRecord()
-			throws InvalidRecordIDException, RecordStoreNotOpenException, RecordStoreException {
+	public byte[] nextRecord() throws RecordStoreException {
 		if (!recordStoreImpl.isOpen()) {
 			throw new RecordStoreNotOpenException();
 		}
@@ -95,28 +95,26 @@ public class RecordEnumerationImpl implements RecordEnumeration {
 			throw new InvalidRecordIDException();
 		}
 
-		byte[] result = ((EnumerationRecord) enumerationRecords.elementAt(currentRecord)).value;
+		byte[] result = enumerationRecords.elementAt(currentRecord).value.clone();
 		currentRecord++;
 
 		return result;
 	}
 
 	@Override
-	public int nextRecordId()
-			throws InvalidRecordIDException {
+	public int nextRecordId() throws InvalidRecordIDException {
 		if (currentRecord >= numRecords()) {
 			throw new InvalidRecordIDException();
 		}
 
-		int result = ((EnumerationRecord) enumerationRecords.elementAt(currentRecord)).recordId;
+		int result = enumerationRecords.elementAt(currentRecord).recordId;
 		currentRecord++;
 
 		return result;
 	}
 
 	@Override
-	public byte[] previousRecord()
-			throws InvalidRecordIDException, RecordStoreNotOpenException, RecordStoreException {
+	public byte[] previousRecord() throws RecordStoreException {
 		if (!recordStoreImpl.isOpen()) {
 			throw new RecordStoreNotOpenException();
 		}
@@ -126,28 +124,23 @@ public class RecordEnumerationImpl implements RecordEnumeration {
 
 		currentRecord--;
 
-		return ((EnumerationRecord) enumerationRecords.elementAt(currentRecord)).value;
+		return enumerationRecords.elementAt(currentRecord).value.clone();
 	}
 
 	@Override
-	public int previousRecordId()
-			throws InvalidRecordIDException {
+	public int previousRecordId() throws InvalidRecordIDException {
 		if (currentRecord < 0) {
 			throw new InvalidRecordIDException();
 		}
 
 		currentRecord--;
 
-		return ((EnumerationRecord) enumerationRecords.elementAt(currentRecord)).recordId;
+		return enumerationRecords.elementAt(currentRecord).recordId;
 	}
 
 	@Override
 	public boolean hasNextElement() {
-		if (currentRecord == numRecords()) {
-			return false;
-		} else {
-			return true;
-		}
+		return currentRecord != numRecords();
 	}
 
 	@Override
@@ -166,26 +159,14 @@ public class RecordEnumerationImpl implements RecordEnumeration {
 		//
 		// filter
 		//
-		synchronized (recordStoreImpl) {
-			try {
-				int recordId = 1;
-				int i = 0;
-				while (i < recordStoreImpl.getNumRecords()) {
-					try {
-						byte[] data = recordStoreImpl.getRecord(recordId);
-						i++;
-						if (filter != null && !filter.matches(data)) {
-							recordId++;
-							continue;
-						}
-						enumerationRecords.add(new EnumerationRecord(recordId, data));
-					} catch (InvalidRecordIDException e) {
-						e.printStackTrace();
-					}
-					recordId++;
+		synchronized (recordStoreImpl.records) {
+			HashMap<Integer, byte[]> records = recordStoreImpl.records;
+			for (Map.Entry<Integer, byte[]> e : records.entrySet()) {
+				byte[] data = e.getValue();
+				if (filter != null && !filter.matches(data)) {
+					continue;
 				}
-			} catch (RecordStoreException e) {
-				e.printStackTrace();
+				enumerationRecords.add(new EnumerationRecord(e.getKey(), data));
 			}
 		}
 
@@ -193,16 +174,7 @@ public class RecordEnumerationImpl implements RecordEnumeration {
 		// sort
 		//
 		if (comparator != null) {
-			Collections.sort(enumerationRecords, (Comparator) (lhs, rhs) -> {
-				int compare = comparator.compare(((EnumerationRecord) lhs).value,
-						((EnumerationRecord) rhs).value);
-				if (compare == RecordComparator.EQUIVALENT)
-					return 0;
-				else if (compare == RecordComparator.FOLLOWS)
-					return 1;
-				else
-					return -1;
-			});
+			Collections.sort(enumerationRecords, (lhs, rhs) -> comparator.compare(lhs.value, rhs.value));
 		}
 	}
 
@@ -229,9 +201,9 @@ public class RecordEnumerationImpl implements RecordEnumeration {
 	public void destroy() {
 	}
 
-	class EnumerationRecord {
-		int recordId;
-		byte[] value;
+	static class EnumerationRecord {
+		final int recordId;
+		final byte[] value;
 
 		EnumerationRecord(int recordId, byte[] value) {
 			this.recordId = recordId;

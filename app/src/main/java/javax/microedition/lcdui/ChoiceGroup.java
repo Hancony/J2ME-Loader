@@ -28,6 +28,10 @@ import android.widget.RadioButton;
 import android.widget.RadioGroup;
 import android.widget.Spinner;
 
+import androidx.appcompat.widget.AppCompatCheckBox;
+import androidx.appcompat.widget.AppCompatRadioButton;
+import androidx.appcompat.widget.AppCompatSpinner;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -36,20 +40,20 @@ import javax.microedition.lcdui.event.SimpleEvent;
 import javax.microedition.lcdui.list.CompoundSpinnerAdapter;
 
 public class ChoiceGroup extends Item implements Choice {
-	private ArrayList<String> strings = new ArrayList<>();
-	private ArrayList<Image> images = new ArrayList<>();
-	private ArrayList<CompoundButton> buttons = new ArrayList<>();
+	private final ArrayList<String> strings = new ArrayList<>();
+	private final ArrayList<Image> images = new ArrayList<>();
+	private final ArrayList<CompoundButton> buttons = new ArrayList<>();
 	private final ArrayList<Boolean> selected = new ArrayList<>();
 
 	private Spinner spinner;
 	private CompoundSpinnerAdapter adapter;
 	private LinearLayout buttongroup;
 
-	private int choiceType;
+	private final int choiceType;
 	private int selectedIndex = -1;
 	private int fitPolicy;
 
-	private SimpleEvent msgSetSelection = new SimpleEvent() {
+	private final SimpleEvent msgSetSelection = new SimpleEvent() {
 		@Override
 		public void process() {
 			spinner.setSelection(selectedIndex);
@@ -86,6 +90,7 @@ public class ChoiceGroup extends Item implements Choice {
 		public void onItemSelected(AdapterView parent, View view, int position, long id) {
 			// prevent onItemSelected call after initializing
 			if (!spinnerInitialized) {
+				spinner.setSelection(selectedIndex);
 				spinnerInitialized = true;
 				return;
 			}
@@ -116,9 +121,9 @@ public class ChoiceGroup extends Item implements Choice {
 		}
 	}
 
-	private RadioListener radiolistener = new RadioListener();
-	private CheckListener checklistener = new CheckListener();
-	private SpinnerListener spinlistener = new SpinnerListener();
+	private final RadioListener radiolistener = new RadioListener();
+	private final CheckListener checklistener = new CheckListener();
+	private final SpinnerListener spinnerListener = new SpinnerListener();
 	private boolean spinnerInitialized;
 
 	public ChoiceGroup(String label, int choiceType) {
@@ -164,6 +169,10 @@ public class ChoiceGroup extends Item implements Choice {
 			if (images.size() == 0) {
 				images.addAll(Collections.nCopies(size, null));
 			}
+			if (choiceType != MULTIPLE) {
+				selectedIndex = 0;
+				selected.set(0, true);
+			}
 		}
 	}
 
@@ -179,12 +188,13 @@ public class ChoiceGroup extends Item implements Choice {
 
 			if (select) {
 				selectedIndex = index;
+				selected.set(index, true);
 			}
 
 			if (buttongroup != null) {
 				addButton(index, stringPart, imagePart, select);
 			} else if (spinner != null) {
-				adapter.append(stringPart, imagePart);
+				adapter.add(stringPart, imagePart);
 
 				if (select) {
 					spinner.setSelection(index);
@@ -433,15 +443,15 @@ public class ChoiceGroup extends Item implements Choice {
 
 			case POPUP:
 				if (spinner == null) {
-					adapter = new CompoundSpinnerAdapter(context);
+					adapter = new CompoundSpinnerAdapter();
 
-					spinner = new Spinner(context);
+					spinner = new AppCompatSpinner(context);
 					spinner.setAdapter(adapter);
 
 					int size = selected.size();
 
 					for (int i = 0; i < size; i++) {
-						adapter.append(strings.get(i), images.get(i));
+						adapter.add(strings.get(i), images.get(i));
 					}
 
 					if (selectedIndex >= 0 && selectedIndex < selected.size()) {
@@ -449,7 +459,7 @@ public class ChoiceGroup extends Item implements Choice {
 					}
 
 					spinnerInitialized = false;
-					spinner.setOnItemSelectedListener(spinlistener);
+					spinner.setOnItemSelectedListener(spinnerListener);
 				}
 
 				return spinner;
@@ -479,6 +489,9 @@ public class ChoiceGroup extends Item implements Choice {
 	}
 
 	private void addButton(CompoundButton button, int index, String stringPart, Image imagePart, boolean checked) {
+		int w = LinearLayout.LayoutParams.MATCH_PARENT;
+		int h = LinearLayout.LayoutParams.WRAP_CONTENT;
+		button.setLayoutParams(new LinearLayout.LayoutParams(w, h));
 		button.setText(stringPart);
 
 		if (imagePart != null) {
@@ -520,11 +533,11 @@ public class ChoiceGroup extends Item implements Choice {
 
 		if (buttongroup instanceof RadioGroup) {
 			for (int i = 0; i < size; i++) {
-				addButton(new RadioButton(context), i, strings.get(i), images.get(i), selected.get(i));
+				addButton(new AppCompatRadioButton(context), i, strings.get(i), images.get(i), selected.get(i));
 			}
 		} else {
 			for (int i = 0; i < size; i++) {
-				addButton(new CheckBox(context), i, strings.get(i), images.get(i), selected.get(i));
+				addButton(new AppCompatCheckBox(context), i, strings.get(i), images.get(i), selected.get(i));
 			}
 		}
 	}

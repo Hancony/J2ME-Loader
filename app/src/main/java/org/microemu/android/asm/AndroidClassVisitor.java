@@ -28,95 +28,32 @@
 package org.microemu.android.asm;
 
 import org.objectweb.asm.ClassVisitor;
-import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 
 public class AndroidClassVisitor extends ClassVisitor {
+	static final String TIMER_TASK = "java/util/TimerTask";
+	boolean isTimerTask;
 
-	public class AndroidMethodVisitor extends PatternMethodAdapter {
-
-		private final static int SEEN_NOTHING = 0;
-
-		private final static int SEEN_I2B = 1;
-
-		private int state;
-
-		private boolean enhanceCatchBlock = false;
-
-		private Label exceptionHandler;
-
-		public AndroidMethodVisitor(MethodVisitor mv) {
-			super(mv);
-		}
-
-		@Override
-		protected void visitInsn() {
-			state = SEEN_NOTHING;
-		}
-
-		@Override
-		public void visitInsn(int opcode) {
-			visitInsn();
-			if (opcode == Opcodes.I2B) {
-				state = SEEN_I2B;
-			}
-			mv.visitInsn(opcode);
-		}
-
-		@Override
-		public void visitLabel(Label label) {
-			mv.visitLabel(label);
-			if (enhanceCatchBlock && label == exceptionHandler) {
-				mv.visitInsn(Opcodes.DUP);
-				mv.visitMethodInsn(Opcodes.INVOKEVIRTUAL, "java/lang/Throwable", "printStackTrace", "()V", false);
-				exceptionHandler = null;
-			}
-		}
-
-		@Override
-		public void visitMethodInsn(int opcode, String owner, String name, String desc, boolean itf) {
-			visitInsn();
-			if (owner.equals("java/lang/Class")) {
-				if (name.equals("getResourceAsStream")) {
-					mv.visitMethodInsn(Opcodes.INVOKESTATIC, "javax/microedition/util/ContextHolder", name,
-							"(Ljava/lang/Class;Ljava/lang/String;)Ljava/io/InputStream;", itf);
-					return;
-				}
-			} else if (owner.equals("java/lang/String")) {
-				String encoding = "ISO-8859-1"; // microedition.encoding
-				if (name.equals("<init>") && desc.startsWith("([B") && !desc.endsWith("Ljava/lang/String;)V")) {
-					mv.visitLdcInsn(encoding);
-					mv.visitMethodInsn(opcode, owner, name, new StringBuffer()
-							.append(desc, 0, desc.length() - 2)
-							.append("Ljava/lang/String;)V").toString(), itf);
-					return;
-				} else if (name.equals("getBytes") && desc.startsWith("()")) {
-					mv.visitLdcInsn(encoding);
-					mv.visitMethodInsn(opcode, owner, name, "(Ljava/lang/String;)[B", itf);
-					return;
-				}
-			}
-			mv.visitMethodInsn(opcode, owner, name, desc, itf);
-		}
-
-		@Override
-		public void visitTryCatchBlock(final Label start, final Label end, final Label handler, final String type) {
-			if (enhanceCatchBlock && type != null) {
-				exceptionHandler = handler;
-			}
-			mv.visitTryCatchBlock(start, end, handler, type);
-		}
-
-	}
-
-	public AndroidClassVisitor(ClassVisitor cv) {
-		super(Opcodes.ASM7, cv);
+	AndroidClassVisitor(ClassVisitor cv) {
+		super(Opcodes.ASM9, cv);
 	}
 
 	@Override
 	public MethodVisitor visitMethod(int access, final String name, String desc, final String signature, final String[] exceptions) {
-		return new AndroidMethodVisitor(super.visitMethod(access, name, desc, signature, exceptions));
+		MethodVisitor mv = super.visitMethod(access, name, desc, signature, exceptions);
+		if (isTimerTask && "run".equals(name) && "()V".equals(desc)) {
+			return new TimerTaskRunPatcher(mv);
+		} else {
+			return new AndroidMethodVisitor(mv);
+		}
 	}
 
+	@Override
+	public void visit(int version, int access, String name, String signature, String superName, String[] interfaces) {
+		if (TIMER_TASK.equals(superName)) {
+			isTimerTask = true;
+		}
+		super.visit(version, access, name, signature, superName, interfaces);
+	}
 }

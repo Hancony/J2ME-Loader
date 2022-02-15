@@ -16,34 +16,44 @@
 
 package ru.playsoftware.j2meloader.appsdb;
 
-import java.util.ArrayList;
-import java.util.List;
-
 import androidx.room.Dao;
 import androidx.room.Delete;
 import androidx.room.Insert;
 import androidx.room.OnConflictStrategy;
 import androidx.room.Query;
+import androidx.room.RawQuery;
+import androidx.room.Update;
+import androidx.sqlite.db.SupportSQLiteQuery;
+
+import java.util.List;
+
 import io.reactivex.Flowable;
 import ru.playsoftware.j2meloader.applist.AppItem;
 
 @Dao
 public interface AppItemDao {
-	@Query("SELECT * FROM apps ORDER BY title COLLATE NOCASE ASC")
-	Flowable<List<AppItem>> getAllByName();
 
-	@Query("SELECT * FROM apps ORDER BY id ASC")
-	Flowable<List<AppItem>> getAllByDate();
+	@RawQuery(observedEntities = AppItem.class)
+	Flowable<List<AppItem>> getAll(SupportSQLiteQuery query);
 
 	@Insert(onConflict = OnConflictStrategy.REPLACE)
 	void insert(AppItem item);
 
 	@Insert(onConflict = OnConflictStrategy.IGNORE)
-	void insertAll(ArrayList<AppItem> items);
+	void insert(List<AppItem> items);
+
+	@Update
+	void update(AppItem item);
 
 	@Delete
 	void delete(AppItem item);
 
+	@Delete
+	void delete(List<AppItem> items);
+
 	@Query("DELETE FROM apps")
 	void deleteAll();
+
+	@Query("SELECT * FROM apps WHERE title = :name AND author = :vendor")
+	AppItem get(String name, String vendor);
 }
