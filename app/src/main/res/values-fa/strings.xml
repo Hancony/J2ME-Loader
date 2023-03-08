@@ -8,7 +8,6 @@
     <string name="search">جستجو</string>
     <string name="licenses">مجوزها</string>
     <string name="save_log">ذخیره گزارش</string>
-    <string name="about_message">این برنامه به شما اجازه می دهد تا برنامه ها و بازی های ۲ بُعدی و ۳ بُعدی جاوا را با برخی محدودیت ها در گوشی اندروید اجرا کنید</string>
     <string name="help_message">• فعال کردن فیلتر در بعضی موارد می تواند عملکرد را به شدت کاهش دهد اگر بازی خیلی کند است این گزینه را غیرفعال کنید
 • با فعال کردن گزینه \"حالت پردازش فوری\" می توانید مشکل لرزش تصویر را برطرف کنید</string>
     <string name="author">برنامه نویس :</string>
@@ -94,7 +93,6 @@
     <string name="take_screenshot">گرفتن عکس از صفحه نمایش</string>
     <string name="screenshot_saved">عکس صفحه نمایش ذخیره شده است</string>
     <string name="log_saved">گزارش ذخیره شده است</string>
-    <string name="common_settings">[تنظیمات مشترک]</string>
     <string name="pref_theme_light">سفید</string>
     <string name="pref_theme_night">سیاه</string>
     <string name="pref_theme_title">پس زمینه</string>

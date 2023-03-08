@@ -1,6 +1,7 @@
 /*
  * Copyright 2015-2016 Nickolay Savchenko
- * Copyright 2017-2018 Nikita Shakarun
+ * Copyright 2017-2020 Nikita Shakarun
+ * Copyright 2018-2022 Yury Kharchenko
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +17,11 @@
  */
 
 package ru.playsoftware.j2meloader.applist;
+
+import static ru.playsoftware.j2meloader.util.Constants.KEY_APP_URI;
+import static ru.playsoftware.j2meloader.util.Constants.KEY_MIDLET_NAME;
+import static ru.playsoftware.j2meloader.util.Constants.PREF_APP_SORT;
+import static ru.playsoftware.j2meloader.util.Constants.PREF_LAST_PATH;
 
 import android.app.Activity;
 import android.app.ActivityManager;
@@ -62,8 +68,6 @@ import androidx.fragment.app.ListFragment;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.preference.PreferenceManager;
 
-import com.google.android.material.floatingactionbutton.FloatingActionButton;
-
 import java.io.File;
 import java.io.IOException;
 import java.util.List;
@@ -78,6 +82,7 @@ import ru.playsoftware.j2meloader.appsdb.AppRepository;
 import ru.playsoftware.j2meloader.config.Config;
 import ru.playsoftware.j2meloader.config.ConfigActivity;
 import ru.playsoftware.j2meloader.config.ProfilesActivity;
+import ru.playsoftware.j2meloader.databinding.FragmentAppsListBinding;
 import ru.playsoftware.j2meloader.donations.DonationsActivity;
 import ru.playsoftware.j2meloader.filepicker.FilteredFilePickerFragment;
 import ru.playsoftware.j2meloader.info.AboutDialogFragment;
@@ -89,11 +94,6 @@ import ru.playsoftware.j2meloader.util.FileUtils;
 import ru.playsoftware.j2meloader.util.LogUtils;
 import ru.woesss.j2me.installer.InstallerDialog;
 
-import static ru.playsoftware.j2meloader.util.Constants.KEY_APP_URI;
-import static ru.playsoftware.j2meloader.util.Constants.KEY_MIDLET_NAME;
-import static ru.playsoftware.j2meloader.util.Constants.PREF_APP_SORT;
-import static ru.playsoftware.j2meloader.util.Constants.PREF_LAST_PATH;
-
 public class AppsListFragment extends ListFragment {
 	private static final String TAG = AppsListFragment.class.getSimpleName();
 	private final AppsListAdapter adapter = new AppsListAdapter();
@@ -101,6 +101,8 @@ public class AppsListFragment extends ListFragment {
 	private SharedPreferences preferences;
 	private AppRepository appRepository;
 	private Disposable searchViewDisposable;
+
+	FragmentAppsListBinding binding;
 
 	private final ActivityResultLauncher<String> openFileLauncher = registerForActivityResult(
 			FileUtils.getFilePicker(),
@@ -129,7 +131,8 @@ public class AppsListFragment extends ListFragment {
 
 	@Override
 	public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
-		return inflater.inflate(R.layout.fragment_appslist, container, false);
+		binding = FragmentAppsListBinding.inflate(inflater, container, false);
+		return binding.getRoot();
 	}
 
 	@Override
@@ -138,8 +141,7 @@ public class AppsListFragment extends ListFragment {
 		registerForContextMenu(getListView());
 		setHasOptionsMenu(true);
 		setListAdapter(adapter);
-		FloatingActionButton fab = view.findViewById(R.id.fab);
-		fab.setOnClickListener(v -> {
+		binding.floatingActionButton.setOnClickListener(v -> {
 			String path = preferences.getString(PREF_LAST_PATH, null);
 			if (path == null) {
 				File dir = Environment.getExternalStorageDirectory();
@@ -149,14 +151,6 @@ public class AppsListFragment extends ListFragment {
 			}
 			openFileLauncher.launch(path);
 		});
-	}
-
-	@Override
-	public void onDestroy() {
-		if (searchViewDisposable != null) {
-			searchViewDisposable.dispose();
-		}
-		super.onDestroy();
 	}
 
 	private void alertDbError(Throwable throwable) {
@@ -180,19 +174,16 @@ public class AppsListFragment extends ListFragment {
 		preferences.edit()
 				.putString(Constants.PREF_LAST_PATH, FilteredFilePickerFragment.getLastPath())
 				.apply();
-		installApp(uri);
-	}
-
-	private void installApp(Uri uri) {
 		InstallerDialog.newInstance(uri).show(getParentFragmentManager(), "installer");
 	}
 
 	private void alertRename(final int id) {
 		AppItem item = adapter.getItem(id);
-		EditText editText = new EditText(getActivity());
+		FragmentActivity activity = requireActivity();
+		EditText editText = new EditText(activity);
 		editText.setText(item.getTitle());
 		float density = getResources().getDisplayMetrics().density;
-		LinearLayout linearLayout = new LinearLayout(getContext());
+		LinearLayout linearLayout = new LinearLayout(activity);
 		LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
 				ViewGroup.LayoutParams.WRAP_CONTENT);
 		int margin = (int) (density * 20);
@@ -201,7 +192,7 @@ public class AppsListFragment extends ListFragment {
 		int paddingVertical = (int) (density * 16);
 		int paddingHorizontal = (int) (density * 8);
 		editText.setPadding(paddingHorizontal, paddingVertical, paddingHorizontal, paddingVertical);
-		AlertDialog.Builder builder = new AlertDialog.Builder(requireActivity())
+		AlertDialog.Builder builder = new AlertDialog.Builder(activity)
 				.setTitle(R.string.action_context_rename)
 				.setView(linearLayout)
 				.setPositiveButton(android.R.string.ok, (dialogInterface, i) -> {
@@ -232,7 +223,7 @@ public class AppsListFragment extends ListFragment {
 	@Override
 	public void onListItemClick(@NonNull ListView l, @NonNull View v, int position, long id) {
 		AppItem item = adapter.getItem(position);
-		Config.startApp(getActivity(), item.getTitle(), item.getPathExt(), false);
+		Config.startApp(requireActivity(), item.getTitle(), item.getPathExt(), false);
 	}
 
 	@Override
@@ -263,10 +254,9 @@ public class AppsListFragment extends ListFragment {
 		} else if (itemId == R.id.action_context_rename) {
 			alertRename(index);
 		} else if (itemId == R.id.action_context_settings) {
-			Config.startApp(getActivity(), appItem.getTitle(), appItem.getPathExt(), true);
+			Config.startApp(requireActivity(), appItem.getTitle(), appItem.getPathExt(), true);
 		} else if (itemId == R.id.action_context_reinstall) {
-			Uri uri = Uri.fromFile(new File(appItem.getPathExt() + Config.MIDLET_RES_FILE));
-			installApp(uri);
+			InstallerDialog.newInstance(appItem.getId()).show(getParentFragmentManager(), "installer");
 		} else if (itemId == R.id.action_context_delete) {
 			alertDelete(appItem);
 		} else {
@@ -396,7 +386,7 @@ public class AppsListFragment extends ListFragment {
 	private void onDbUpdated(List<AppItem> items) {
 		adapter.setItems(items);
 		if (appUri != null) {
-			installApp(appUri);
+			InstallerDialog.newInstance(appUri).show(getParentFragmentManager(), "installer");
 			appUri = null;
 		}
 	}
@@ -435,5 +425,19 @@ public class AppsListFragment extends ListFragment {
 			this.variant = variant;
 			notifyDataSetChanged();
 		}
+	}
+
+	@Override
+	public void onDestroyView() {
+		super.onDestroyView();
+		binding = null;
+	}
+
+	@Override
+	public void onDestroy() {
+		if (searchViewDisposable != null) {
+			searchViewDisposable.dispose();
+		}
+		super.onDestroy();
 	}
 }

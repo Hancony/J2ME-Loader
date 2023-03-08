@@ -33,6 +33,7 @@ import org.acra.ACRA;
 import org.acra.config.CoreConfigurationBuilder;
 import org.acra.config.DialogConfigurationBuilder;
 
+import java.math.BigInteger;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
@@ -50,7 +51,7 @@ public class EmulatorApplication extends Application {
 
 	private final SharedPreferences.OnSharedPreferenceChangeListener themeListener = (sharedPreferences, key) -> {
 		if (key.equals(Constants.PREF_THEME)) {
-			setNightMode(sharedPreferences.getString(Constants.PREF_THEME, "light"));
+			setNightMode(sharedPreferences.getString(Constants.PREF_THEME, null));
 		}
 	};
 
@@ -62,23 +63,23 @@ public class EmulatorApplication extends Application {
 			MultiDex.install(this);
 		}
 		ContextHolder.setApplication(this);
-		if (isSignatureValid() && !BuildConfig.FLAVOR.equals("dev")) {
-			CoreConfigurationBuilder builder = new CoreConfigurationBuilder(this);
-			builder.withBuildConfigClass(BuildConfig.class)
-					.withParallel(false)
-					.withSendReportsInDevMode(false)
-					.withEnabled(true);
-			builder.getPluginConfigurationBuilder(DialogConfigurationBuilder.class)
-					.withResTitle(R.string.crash_dialog_title)
-					.withResText(R.string.crash_dialog_message)
-					.withResPositiveButtonText(R.string.report_crash)
-					.withResTheme(R.style.Theme_AppCompat_Dialog)
-					.withEnabled(true);
-			ACRA.init(this, builder);
-		}
+		ACRA.init(this, new CoreConfigurationBuilder()
+				.withBuildConfigClass(BuildConfig.class)
+				.withParallel(false)
+				.withSendReportsInDevMode(false)
+				.withPluginConfigurations(new DialogConfigurationBuilder()
+						.withTitle(getString(R.string.crash_dialog_title))
+						.withText(getString(R.string.crash_dialog_message))
+						.withPositiveButtonText(getString(R.string.report_crash))
+						.withResTheme(androidx.appcompat.R.style.Theme_AppCompat_DayNight_Dialog)
+						.withEnabled(true)
+						.build()
+				));
+		boolean enabled = isSignatureValid() && !BuildConfig.FLAVOR.equals("dev");
+		ACRA.getErrorReporter().setEnabled(enabled);
 		SharedPreferences sp = PreferenceManager.getDefaultSharedPreferences(this);
 		sp.registerOnSharedPreferenceChangeListener(themeListener);
-		setNightMode(sp.getString(Constants.PREF_THEME, "light"));
+		setNightMode(sp.getString(Constants.PREF_THEME, null));
 		AppCompatDelegate.setCompatVectorFromResourcesEnabled(true);
 	}
 
@@ -98,7 +99,7 @@ public class EmulatorApplication extends Application {
 			MessageDigest md = MessageDigest.getInstance("SHA-1");
 			for (Signature signature : signatures) {
 				md.update(signature.toByteArray());
-				String sha1 = bytesToHex(md.digest());
+				String sha1 = String.format("%032X", new BigInteger(1, md.digest()));
 				if (Arrays.asList(VALID_SIGNATURES).contains(sha1)) {
 					return true;
 				}
@@ -111,20 +112,10 @@ public class EmulatorApplication extends Application {
 		return false;
 	}
 
-	private String bytesToHex(byte[] bytes) {
-		final char[] hexArray = {'0', '1', '2', '3', '4', '5', '6', '7', '8',
-				'9', 'A', 'B', 'C', 'D', 'E', 'F'};
-		char[] hexChars = new char[bytes.length * 2];
-		int v;
-		for (int i = 0; i < bytes.length; i++) {
-			v = bytes[i] & 0xFF;
-			hexChars[i * 2] = hexArray[v >>> 4];
-			hexChars[i * 2 + 1] = hexArray[v & 0x0F];
-		}
-		return new String(hexChars);
-	}
-
 	void setNightMode(String theme) {
+		if (theme == null) {
+			theme = getString(R.string.pref_theme_default);
+		}
 		switch (theme) {
 			case "light":
 				AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO);
