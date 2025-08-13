@@ -25,6 +25,7 @@ import static ru.playsoftware.j2meloader.util.Constants.PREF_LAST_PATH;
 
 import android.app.Activity;
 import android.app.ActivityManager;
+import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -83,7 +84,6 @@ import ru.playsoftware.j2meloader.config.Config;
 import ru.playsoftware.j2meloader.config.ConfigActivity;
 import ru.playsoftware.j2meloader.config.ProfilesActivity;
 import ru.playsoftware.j2meloader.databinding.FragmentAppsListBinding;
-import ru.playsoftware.j2meloader.donations.DonationsActivity;
 import ru.playsoftware.j2meloader.filepicker.FilteredFilePickerFragment;
 import ru.playsoftware.j2meloader.info.AboutDialogFragment;
 import ru.playsoftware.j2meloader.info.HelpDialogFragment;
@@ -149,7 +149,12 @@ public class AppsListFragment extends ListFragment {
 					path = dir.getAbsolutePath();
 				}
 			}
-			openFileLauncher.launch(path);
+			try {
+				openFileLauncher.launch(path);
+			} catch (ActivityNotFoundException e) {
+				Toast.makeText(getContext(), R.string.error_no_picker, Toast.LENGTH_SHORT).show();
+				e.printStackTrace();
+			}
 		});
 	}
 
@@ -344,9 +349,6 @@ public class AppsListFragment extends ListFragment {
 		} else if (itemId == R.id.action_help) {
 			HelpDialogFragment helpDialogFragment = new HelpDialogFragment();
 			helpDialogFragment.show(getChildFragmentManager(), "help");
-		} else if (itemId == R.id.action_donate) {
-			Intent donationsIntent = new Intent(activity, DonationsActivity.class);
-			startActivity(donationsIntent);
 		} else if (itemId == R.id.action_save_log) {
 			try {
 				LogUtils.writeLog();

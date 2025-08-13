@@ -2,6 +2,7 @@
  * Copyright 2012 Kulikov Dmitriy
  * Copyright 2015-2016 Nickolay Savchenko
  * Copyright 2017-2018 Nikita Shakarun
+ * Copyright 2022-2023 Arman Jussupgaliyev
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +21,7 @@ package javax.microedition.midlet;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.net.Uri;
+import android.util.Log;
 
 import org.microemu.cldc.file.FileSystemFileConnection;
 
@@ -34,11 +36,10 @@ import javax.microedition.shell.MidletThread;
 import javax.microedition.util.ContextHolder;
 
 import ru.playsoftware.j2meloader.applist.AppItem;
-import ru.playsoftware.j2meloader.config.Config;
 import ru.playsoftware.j2meloader.util.AppUtils;
 
 public abstract class MIDlet {
-
+	private static final String TAG = MIDlet.class.getName();
 	private static Map<String, String> properties;
 
 	protected MIDlet() {
@@ -50,7 +51,9 @@ public abstract class MIDlet {
 	}
 
 	public String getAppProperty(String key) {
-		return properties.get(key);
+		String value = properties.get(key);
+		Log.d(TAG, "MIDlet.getAppProperty: " + key + "=" + value);
+		return value;
 	}
 
 	/**
